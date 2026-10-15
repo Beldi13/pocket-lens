@@ -31,10 +31,18 @@ public final class Files {
         StructStat stat = Os.lstat(file.getPath());
         return (stat.st_mode & OsConstants.S_IFMT) == OsConstants.S_IFLNK;
     }
+    private static boolean appPrivate(String value) {
+        String normalized = value.replaceAll("/+", "/").toLowerCase(java.util.Locale.ROOT);
+        for (String folder : new String[] { ROOT + "/android/data", ROOT + "/android/obb" }) {
+            if (normalized.equals(folder) || normalized.startsWith(folder + "/")) return true;
+        }
+        return false;
+    }
     private static File path(String value, boolean mutation) throws Exception {
         if (!(value.equals(ROOT) || value.startsWith(ROOT + "/")) || value.indexOf('\0') >= 0) {
             throw new IOException("file_path");
         }
+        if (appPrivate(value)) throw new IOException("file_private");
         File current = storage;
         String relative = value.substring(ROOT.length());
         for (String part : relative.split("/")) {
@@ -86,8 +94,10 @@ public final class Files {
                 if (children == null) throw new IOException("file_permission");
                 JSONArray entries = new JSONArray();
                 for (File child : children) {
+                    String childPath = location.replaceAll("/+$", "") + "/" + child.getName();
+                    if (appPrivate(childPath)) continue;
                     if (entries.length() >= 50000) throw new IOException("file_too_many");
-                    entries.put(entry(child, location.replaceAll("/+$", "") + "/" + child.getName()));
+                    entries.put(entry(child, childPath));
                 }
                 result.put("entries", entries);
             } else if (action.equals("stat")) {

@@ -123,6 +123,8 @@ export const workspaceEs = {
   error_file_path:
     "La ruta no es válida o está fuera del almacenamiento permitido.",
   error_file_root: "No se puede modificar la raíz del almacenamiento.",
+  error_file_private:
+    "Esta carpeta contiene datos privados de aplicaciones y está fuera del gestor. Usa las carpetas compartidas de archivos y medios.",
   error_file_link:
     "No se siguen enlaces simbólicos, uniones ni archivos especiales. Selecciona una carpeta o archivo normal.",
   error_file_name:
@@ -293,6 +295,8 @@ export const workspaceEn: Record<keyof typeof workspaceEs, string> = {
     "Enable control and reopen the session to use this action.",
   error_file_path: "The path is invalid or outside permitted storage.",
   error_file_root: "The storage root cannot be modified.",
+  error_file_private:
+    "This folder contains app-private data and is outside the file manager. Use shared file and media folders.",
   error_file_link:
     "Symbolic links, junctions and special files are not followed. Select a regular file or folder.",
   error_file_name:
