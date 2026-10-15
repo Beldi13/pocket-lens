@@ -510,7 +510,7 @@ impl FileManager {
                         cancelled(&cancel)?;
                         let p = local_path(&path, true)?;
                         self.update(job, |s| s.current = path.clone(), true);
-                        tokio::task::spawn_blocking(move || trash::delete(p))
+                        tokio::task::spawn_blocking(move || crate::recycle::recycle(p))
                             .await
                             .map_err(|_| issue("file_trash"))?
                             .map_err(|_| issue("file_trash"))?;

@@ -4,6 +4,7 @@ pub mod engine;
 pub mod file_io;
 pub mod files;
 pub mod model;
+mod recycle;
 pub mod screen;
 pub mod store;
 #[cfg(feature = "diagnostics")]

@@ -2824,6 +2824,7 @@ dependencies = [
  "tokio",
  "trash",
  "uuid",
+ "windows",
  "windows-sys 0.61.2",
 ]
 
