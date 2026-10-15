@@ -18,6 +18,6 @@ for (const [name, size] of [
 }
 await writeFile(
   "src-tauri/icons/icon.ico",
-  await pngToIco(["src-tauri/icons/icon.png"]),
+  await pngToIco("src-tauri/icons/icon.png"),
 );
 console.log("Pocket Lens brand assets generated.");
