@@ -144,3 +144,18 @@ pub fn power(_pid: u32, _on: bool) -> Result<()> {
         "Screen controls require Windows",
     ))
 }
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn no_keys_are_sent_when_the_owned_process_has_no_window() {
+        assert_eq!(
+            super::power(u32::MAX, false).unwrap_err().code,
+            "screen_focus"
+        );
+        assert_eq!(
+            super::power(u32::MAX, true).unwrap_err().code,
+            "screen_focus"
+        );
+    }
+}

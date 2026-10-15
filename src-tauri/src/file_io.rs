@@ -584,6 +584,20 @@ mod tests {
         assert!(valid_name("foto Ñ_日本.jpg", true).is_ok());
         assert!(valid_name("quote'$(test).txt", true).is_ok());
     }
+    #[cfg(windows)]
+    #[test]
+    fn local_paths_reject_device_names_alternate_streams_and_root_mutation() {
+        for path in [
+            r"\\.\PhysicalDrive0",
+            r"\\?\C:\test",
+            r"C:\file.txt:secret",
+            r"C:\CON",
+            r"C:\folder\..\file",
+        ] {
+            assert!(local_path(path, true).is_err(), "{path}");
+        }
+        assert_eq!(local_path(r"C:\", true).unwrap_err().code, "file_root");
+    }
     #[tokio::test]
     async fn local_stream_verifies_content_and_rejects_cancelled_operations() {
         let temp = tempfile::tempdir().unwrap();

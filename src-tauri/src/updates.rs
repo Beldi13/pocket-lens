@@ -203,13 +203,21 @@ pub fn stable_newer(current: &str, candidate: &str) -> bool {
 mod tests {
     use super::*;
     fn fixture(version: &str) -> tauri_plugin_updater::Update {
-        let app = tauri::test::mock_app();
-        let config = tauri_plugin_updater::Config {
-            pubkey: include_str!("../tests/fixtures/update.pub").trim().into(),
-            require_signed_version: true,
-            ..Default::default()
-        };
-        let updater = tauri_plugin_updater::UpdaterBuilder::new(app.handle(), config)
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({
+                "pubkey": include_str!("../tests/fixtures/update.pub").trim(),
+                "requireSignedVersion": true,
+                "endpoints": ["https://example.invalid/latest.json"]
+            }),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        let updater = app
+            .updater_builder()
             .target("windows-x86_64")
             .executable_path(std::path::PathBuf::from("C:/isolated-test/pocket-lens.exe"))
             .configure_client(|_| panic!("Verification fixtures must not use the network"))
