@@ -312,7 +312,7 @@ impl FileManager {
         }
         self.update(&job, |_| {}, true);
         let manager = self.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let gate = manager.gate(&request.profile_id);
             let _guard = gate.lock().await;
             let result = manager.run(&job, &request).await;
@@ -787,6 +787,36 @@ fn fingerprint(nodes: &[Node]) -> Vec<(String, String, u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn synchronous_command_can_start_a_file_job_without_a_tokio_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("input.txt");
+        let target = temp.path().join("target");
+        std::fs::write(&source, b"from synchronous IPC").unwrap();
+        std::fs::create_dir(&target).unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        for _ in 0..500 {
+            let status = manager.jobs().into_iter().find(|j| j.id == job.id).unwrap();
+            if status.state == "completed" {
+                assert_eq!(
+                    std::fs::read(target.join("input.txt")).unwrap(),
+                    b"from synchronous IPC"
+                );
+                return;
+            }
+            assert_ne!(status.state, "error", "{:?}", status.error);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("Synchronous file command did not complete");
+    }
     fn manager(root: &std::path::Path) -> Arc<FileManager> {
         let profile = |id: &str| DeviceProfile {
             id: id.into(),

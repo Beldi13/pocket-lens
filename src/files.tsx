@@ -391,6 +391,8 @@ export function FileBrowser({
     const current = drag.current;
     if (!current) return;
     if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > 6) {
+      if (!current.moved)
+        event.currentTarget.setPointerCapture?.(event.pointerId);
       current.moved = true;
       setDragPoint({
         x: event.clientX,
@@ -727,7 +729,6 @@ export function FileBrowser({
                       y: event.clientY,
                       moved: false,
                     };
-                    event.currentTarget.setPointerCapture?.(event.pointerId);
                   }}
                   onPointerMove={pointerMove}
                   onPointerUp={pointerUp}
