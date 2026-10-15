@@ -17,7 +17,7 @@ try {
     $pub = (Get-Content -Raw -LiteralPath "$fixture/test.key.pub").Trim()
     foreach ($version in @('0.3.1', '0.3.0')) {
         $config = @{
-            productName = 'Pocket Lens Update Check'; identifier = 'dev.beldi.pocketlens.updatecheck'; version = $version
+            mainBinaryName = 'pocket-lens-update-check'; productName = 'Pocket Lens Update Check'; identifier = 'dev.beldi.pocketlens.updatecheck'; version = $version
             app = @{ windows = @(@{ label = 'main'; title = 'Pocket Lens Update Check'; visible = $false }) }
             bundle = @{ createUpdaterArtifacts = $true; windows = @{ nsis = @{ displayLanguageSelector = $false } } }
             plugins = @{ updater = @{ pubkey = $pub; endpoints = @('http://127.0.0.1:18749/latest.json'); dangerousInsecureTransportProtocol = $true; requireSignedVersion = $true; windows = @{ installMode = 'quiet' } } }
@@ -40,13 +40,13 @@ try {
     $initial = Start-Process -FilePath "$fixture/0.3.0.exe" -ArgumentList @('/S', "/D=$install") -PassThru -WindowStyle Hidden -Wait
     if ($initial.ExitCode -ne 0) { throw 'Fixture baseline install failed' }
     $env:POCKET_LENS_UPDATE_CHECK = $fixture
-    $baseline = Start-Process -FilePath "$install/pocket-lens.exe" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$fixture/baseline.log" -RedirectStandardError "$fixture/baseline-error.log"
+    $baseline = Start-Process -FilePath "$install/pocket-lens-update-check.exe" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$fixture/baseline.log" -RedirectStandardError "$fixture/baseline-error.log"
     $deadline = (Get-Date).AddMinutes(4)
     while (!(Test-Path "$fixture/passed.json") -and !(Test-Path "$fixture/failed.txt") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
     if (Test-Path "$fixture/failed.txt") { throw (Get-Content -Raw "$fixture/failed.txt") }
     if (!(Test-Path "$fixture/passed.json")) {
         $baseline.Refresh()
-        Write-Output "Baseline exited: $($baseline.HasExited); data fixture: $(Test-Path "$fixture/before.json"); signature verified: $(Test-Path "$fixture/verified"); installed version: $((Get-Item "$install/pocket-lens.exe").VersionInfo.ProductVersion)"
+        Write-Output "Baseline exited: $($baseline.HasExited); data fixture: $(Test-Path "$fixture/before.json"); signature verified: $(Test-Path "$fixture/verified"); installed version: $((Get-Item "$install/pocket-lens-update-check.exe").VersionInfo.ProductVersion)"
         if (Test-Path "$fixture/baseline-error.log") { Get-Content -LiteralPath "$fixture/baseline-error.log" }
         throw 'Signed installer did not relaunch the updated fixture'
     }
