@@ -153,7 +153,7 @@ async fn files_check(engine: Arc<Engine>, id: &str, output: &std::path::Path) ->
         .edit(id, "phone", "/sdcard/Download", &folder, None, None)
         .await?;
     async fn run(manager: &Arc<FileManager>, request: FileRequest) -> Result<()> {
-        let job = manager.start(request)?;
+        let job = manager.enqueue(request)?;
         for _ in 0..1800 {
             let state = manager.jobs().into_iter().find(|j| j.id == job.id).unwrap();
             match state.state.as_str() {
