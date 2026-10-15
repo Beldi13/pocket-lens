@@ -1,4 +1,6 @@
+import { workspaceEs, workspaceEn } from "./workspace-i18n";
 const es = {
+  ...workspaceEs,
   artworkTitle: "Imagen del dispositivo",
   artworkHint:
     "Intentamos obtener el fondo original al conectar. Si Android no lo permite, se mantiene el dibujo. Los cambios de imagen se guardan al instante, solo en tu computadora.",
@@ -213,6 +215,7 @@ const es = {
     "No se pudo completar la acción. Revisa los detalles y vuelve a intentarlo.",
 };
 const en: Record<keyof typeof es, string> = {
+  ...workspaceEn,
   artworkTitle: "Device image",
   artworkHint:
     "We try to read the original wallpaper when connected. If Android does not allow it, the drawing stays. Image changes are saved immediately, only on your computer.",

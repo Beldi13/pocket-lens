@@ -54,7 +54,7 @@ impl Updates {
             s.state = "checking".into();
             s.error = None;
         });
-        let result = async {
+        let result: Result<Option<()>> = async {
             let updater = app
                 .updater_builder()
                 .timeout(std::time::Duration::from_secs(20))
@@ -144,9 +144,16 @@ impl Updates {
                 self.change(app, |s| s.state = "downloaded".into());
                 Ok(self.status())
             }
-            Err(_) => {
+            Err(cause) => {
                 *self.bytes.lock().unwrap() = None;
-                let error = issue("update_download");
+                let text = cause.to_string().to_lowercase();
+                let error = issue(if text.contains("version") {
+                    "update_version"
+                } else if text.contains("signature") || text.contains("minisign") {
+                    "update_signature"
+                } else {
+                    "update_download"
+                });
                 self.change(app, |s| {
                     s.state = "available".into();
                     s.error = Some(error.clone());
@@ -156,6 +163,7 @@ impl Updates {
         }
     }
     pub fn install(&self, app: &tauri::AppHandle) -> Result<()> {
+        let _gate = self.gate.try_lock().map_err(|_| issue("update_busy"))?;
         let update = self
             .update
             .lock()

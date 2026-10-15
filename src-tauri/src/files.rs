@@ -191,6 +191,7 @@ impl FileManager {
         self.ready()?;
         let gate = self.gate(id);
         let _guard = gate.try_lock().map_err(|_| issue("file_busy"))?;
+        self.ready()?;
         let context = self.context(id, side == "phone", confirmed).await?;
         let (_tx, cancel) = watch::channel(false);
         let result =
@@ -277,10 +278,11 @@ impl FileManager {
             choices: Mutex::default(),
             last_emit: Mutex::new(Instant::now()),
         });
-        self.jobs
-            .lock()
-            .unwrap()
-            .insert(status.id.clone(), job.clone());
+        {
+            let mut jobs = self.jobs.lock().unwrap();
+            self.ready()?;
+            jobs.insert(status.id.clone(), job.clone());
+        }
         self.update(&job, |_| {}, true);
         let manager = self.clone();
         tokio::spawn(async move {
@@ -669,7 +671,14 @@ impl FileManager {
             }
         }
         for _ in 0..150 {
-            if !self.has_active(None) {
+            if !self.has_active(None)
+                && self
+                    .gates
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .all(|g| g.try_lock().is_ok())
+            {
                 return Ok(());
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;

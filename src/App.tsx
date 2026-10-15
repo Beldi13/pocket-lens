@@ -10,6 +10,8 @@ import {
   LayoutGrid,
   LoaderCircle,
   Monitor,
+  MonitorOff,
+  FolderOpen,
   MoreHorizontal,
   Plus,
   Power,
@@ -25,6 +27,8 @@ import {
 } from "lucide-react";
 import { api, desktop } from "./api";
 import { version } from "../package.json";
+import { FileBrowser, FileJobs, activeJob } from "./files";
+import { UpdateBanner, UpdatePanel, useUpdates } from "./updates";
 import { PhoneArtwork } from "./artwork";
 import {
   EditDialog,
@@ -42,6 +46,7 @@ import type {
   DetectedDevice,
   DeviceProfile,
   SessionStatus,
+  FileJob,
 } from "./types";
 
 const emptySnapshot: AppSnapshot = {
@@ -62,7 +67,13 @@ export default function App() {
     navigator.language.startsWith("es") ? "es" : "en",
   );
   const [theme, setTheme] = useState("system");
-  const [view, setView] = useState<"devices" | "settings" | "help">("devices");
+  const [view, setView] = useState<"devices" | "settings" | "help" | "files">(
+    "devices",
+  );
+  const [fileProfile, setFileProfile] = useState("");
+  const [jobs, setJobs] = useState<FileJob[]>([]);
+  const [quitConfirm, setQuitConfirm] = useState(false);
+  const updates = useUpdates();
   const [register, setRegister] = useState(false),
     [initialDevice, setInitialDevice] = useState<DetectedDevice>();
   const [editing, setEditing] = useState<DeviceProfile | null>(null),
@@ -125,6 +136,35 @@ export default function App() {
       window.clearInterval(interval);
     };
   }, [refresh]);
+  useEffect(() => {
+    if (!desktop) return;
+    let disposed = false;
+    const unlisteners: (() => void)[] = [];
+    const sync = () => {
+      void api
+        .fileJobs()
+        .then((next) => {
+          if (!disposed) setJobs(next);
+        })
+        .catch((e) => {
+          if (!disposed) setError(asError(e));
+        });
+    };
+    sync();
+    void Promise.all([
+      listen("transfer://changed", sync),
+      listen("exit://requested", () => setQuitConfirm(true)),
+    ]).then((results) => {
+      if (disposed) results.forEach((fn) => fn());
+      else unlisteners.push(...results);
+    });
+    const timer = window.setInterval(sync, 2500);
+    return () => {
+      disposed = true;
+      unlisteners.forEach((fn) => fn());
+      window.clearInterval(timer);
+    };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(""), 4500);
@@ -256,7 +296,11 @@ export default function App() {
                 {t("diagnostics")}
               </button>
               <button
-                disabled={isActive || busy.includes(profile.id)}
+                disabled={
+                  isActive ||
+                  busy.includes(profile.id) ||
+                  jobs.some((j) => j.profileId === profile.id && activeJob(j))
+                }
                 className="danger-text"
                 onClick={() => setForgetting(profile)}
               >
@@ -338,6 +382,61 @@ export default function App() {
             <Settings2 size={18} />
           </button>
         </div>
+        <div className="card-file-actions">
+          <button
+            className="secondary"
+            disabled={!desktop}
+            onClick={() => {
+              setFileProfile(profile.id);
+              setView("files");
+            }}
+          >
+            <FolderOpen size={15} />
+            {t("files")}
+          </button>
+          {isActive && (
+            <div className="card-screen-actions">
+              <button
+                className="secondary"
+                title={t("screenOnHint")}
+                disabled={
+                  state !== "running" ||
+                  !profile.options.control ||
+                  busy.includes(`screen:${profile.id}`)
+                }
+                onClick={() =>
+                  void perform(
+                    `screen:${profile.id}`,
+                    () => api.screenPower(profile.id, true),
+                    t("screenSent"),
+                  )
+                }
+              >
+                <Monitor size={14} />
+                {t("screenOn")}
+              </button>
+              <button
+                className="secondary"
+                title={t("screenOffHint")}
+                disabled={
+                  state !== "running" ||
+                  !profile.options.control ||
+                  busy.includes(`screen:${profile.id}`)
+                }
+                onClick={() =>
+                  void perform(
+                    `screen:${profile.id}`,
+                    () => api.screenPower(profile.id, false),
+                    t("screenSent"),
+                  )
+                }
+              >
+                <MonitorOff size={14} />
+                {t("screenOff")}
+              </button>
+            </div>
+          )}
+        </div>
         {session?.recordingPath && (
           <details className="recording-path">
             <summary>{t("recordingSaved")}</summary>
@@ -368,6 +467,7 @@ export default function App() {
           {(
             [
               { key: "devices", icon: LayoutGrid },
+              { key: "files", icon: FolderOpen },
               { key: "settings", icon: Settings2 },
               { key: "help", icon: CircleHelp },
             ] as const
@@ -375,7 +475,14 @@ export default function App() {
             <button
               key={item.key}
               className={view === item.key ? "selected" : ""}
-              onClick={() => setView(item.key)}
+              disabled={
+                item.key === "files" && !snapshot.settings.profiles.length
+              }
+              onClick={() => {
+                if (item.key === "files" && !fileProfile)
+                  setFileProfile(snapshot.settings.profiles[0]?.id ?? "");
+                setView(item.key);
+              }}
             >
               <item.icon size={19} />
               <span>{t(item.key)}</span>
@@ -428,6 +535,32 @@ export default function App() {
           )}
           {error && (
             <ErrorNotice error={error} t={t} onDismiss={() => setError(null)} />
+          )}
+          {view !== "settings" && (
+            <UpdateBanner
+              status={updates.status}
+              t={t}
+              onOpen={() => setView("settings")}
+            />
+          )}
+          {view === "files" && fileProfile && (
+            <>
+              <FileBrowser
+                key={fileProfile}
+                profileId={fileProfile}
+                snapshot={snapshot}
+                t={t}
+                onProfileChange={setFileProfile}
+                onBack={() => setView("devices")}
+              />
+              <FileJobs
+                jobs={jobs}
+                profiles={snapshot.settings.profiles}
+                t={t}
+                onError={setError}
+                onOpen={setFileProfile}
+              />
+            </>
           )}
           {view === "devices" && (
             <>
@@ -675,12 +808,23 @@ export default function App() {
                 <button
                   className="secondary"
                   disabled={!desktop}
-                  onClick={() => void api.exit()}
+                  onClick={() => {
+                    if (jobs.some(activeJob)) setQuitConfirm(true);
+                    else void perform("exit", () => api.exit());
+                  }}
                 >
                   <Power size={17} />
                   {t("quit")}
                 </button>
               </section>
+              <UpdatePanel
+                status={updates.status}
+                check={updates.check}
+                download={updates.download}
+                hasJobs={jobs.some(activeJob)}
+                t={t}
+                onError={setError}
+              />
               <section className="privacy-panel">
                 <ShieldCheck size={28} />
                 <div>
@@ -730,6 +874,7 @@ export default function App() {
               <section className="settings-panel">
                 <h3>{t("troubleshooting")}</h3>
                 <p>{t("troubleshootingText")}</p>
+                <p>{t("screenHelp")}</p>
                 <button
                   className="primary"
                   disabled={!desktop}
@@ -764,6 +909,42 @@ export default function App() {
           onClose={() => setRegister(false)}
           onSaved={() => saved(t("registeredMessage"))}
         />
+      )}
+      {view !== "files" && jobs.some(activeJob) && (
+        <div className="file-jobs-banner">
+          <FolderOpen size={17} />
+          <span>
+            {jobs.filter(activeJob).length} · {t("fileQueue")}
+          </span>
+          <button
+            className="text-button"
+            onClick={() => {
+              setFileProfile(jobs.find(activeJob)!.profileId);
+              setView("files");
+            }}
+          >
+            {t("fileShowJobs")}
+          </button>
+        </div>
+      )}
+      {quitConfirm && (
+        <Modal title={t("exitJobsTitle")} onClose={() => setQuitConfirm(false)}>
+          <div className="wizard-body">
+            <p>{t("exitJobsHint")}</p>
+          </div>
+          <div className="modal-actions">
+            <button className="secondary" onClick={() => setQuitConfirm(false)}>
+              {t("cancel")}
+            </button>
+            <button
+              className="primary"
+              disabled={busy.includes("exit")}
+              onClick={() => void perform("exit", () => api.exit(true))}
+            >
+              {t("exitJobsConfirm")}
+            </button>
+          </div>
+        </Modal>
       )}
       {editing && (
         <EditDialog

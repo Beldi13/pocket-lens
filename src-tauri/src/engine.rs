@@ -22,6 +22,7 @@ struct ManagedSession {
     stopping: bool,
     log: Arc<Mutex<String>>,
     identity: Option<String>,
+    control: bool,
 }
 pub struct Engine {
     pub adb: Adb,
@@ -481,6 +482,7 @@ impl Engine {
                 stopping: false,
                 log: log.clone(),
                 identity: verified.identity.clone(),
+                control: profile.options.control,
             },
         );
         let services = self.discovery.lock().unwrap().services.clone();
@@ -604,6 +606,12 @@ impl Engine {
                 .get(id)
                 .filter(|s| s.status.state == "running")
                 .ok_or_else(|| AppError::new("session_inactive", "Open the device screen first"))?;
+            if !session.control {
+                return Err(AppError::new(
+                    "control_disabled",
+                    "Enable control and reopen the session",
+                ));
+            }
             session.child.clone()
         };
         let mut child = child.lock().await;
@@ -655,19 +663,33 @@ impl Engine {
     pub async fn prepare_install(&self) -> Result<()> {
         self.shutting_down.store(true, Ordering::SeqCst);
         let _launch = self.launch_gate.lock().await;
-        let ids: Vec<_> = self.sessions.lock().unwrap().keys().cloned().collect();
-        for id in ids {
-            if let Err(e) = self.stop(&id).await {
+        let ids: Vec<_> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, s)| ["starting", "running", "stopping"].contains(&s.status.state.as_str()))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &ids {
+            if let Err(e) = self.stop(id).await {
                 self.shutting_down.store(false, Ordering::SeqCst);
                 return Err(e);
             }
         }
-        if self.sessions.lock().unwrap().values().any(|s| {
-            s.status
-                .error
-                .as_ref()
-                .is_some_and(|e| e.code == "forced_close")
-        }) {
+        if self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| ids.contains(id))
+            .any(|(_, s)| {
+                s.status
+                    .error
+                    .as_ref()
+                    .is_some_and(|e| e.code == "forced_close")
+            })
+        {
             self.shutting_down.store(false, Ordering::SeqCst);
             return Err(AppError::new(
                 "forced_close",

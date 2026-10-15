@@ -58,6 +58,7 @@ export interface AppPreferences {
   language: string;
   theme: string;
   autostartInitialized: boolean;
+  fileDirectories?: Record<string, string>;
 }
 export interface Settings {
   version: number;
@@ -84,6 +85,51 @@ export interface AppSnapshot {
   devices: DeviceStatus[];
   autostart: boolean;
   engineVersion: string;
+}
+export type FileSide = "local" | "phone";
+export interface FileEntry {
+  name: string;
+  path: string;
+  kind: "file" | "directory" | "link" | "other";
+  size: number;
+  modified: number;
+}
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  entries: FileEntry[];
+}
+export interface FileRequest {
+  profileId: string;
+  operation: "copy" | "move" | "delete";
+  sourceSide: FileSide;
+  paths: string[];
+  targetSide: FileSide;
+  targetDirectory: string;
+  confirmedSerial: string | null;
+}
+export interface FileJob {
+  id: string;
+  profileId: string;
+  operation: string;
+  state: string;
+  bytesDone: number;
+  bytesTotal: number;
+  filesDone: number;
+  filesTotal: number;
+  current: string;
+  skipped: number;
+  conflict: { source: string; target: string; kind: string } | null;
+  error: AppError | null;
+  created: number;
+}
+export interface UpdateStatus {
+  state: string;
+  version: string | null;
+  notes: string;
+  downloaded: number;
+  total: number | null;
+  error: AppError | null;
 }
 export const defaultOptions: MirrorOptions = {
   turnScreenOff: false,
