@@ -21,7 +21,7 @@ jobs:
         with:
           workspaces: src-tauri -> target
           cache-on-failure: true
-      - run: npm ci
+      - run: npm ci --prefer-offline --no-audit --fund=false
       - run: npm run vendor:prepare
       - name: Build Android helpers
         shell: pwsh

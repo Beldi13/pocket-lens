@@ -178,7 +178,7 @@ mod tests {
         let item = trash::os_limited::list()
             .unwrap()
             .into_iter()
-            .find(|item| item.name == name)
+            .find(|item| item.name == std::ffi::OsString::from(&name))
             .expect("File must be recoverable, never permanently removed");
         trash::os_limited::restore_all([item]).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), b"recoverable fixture");

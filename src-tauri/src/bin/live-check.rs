@@ -78,7 +78,7 @@ async fn check() -> Result<()> {
             .code,
         "session_active"
     );
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(20)).await;
     let first = engine
         .snapshot(false)
         .sessions
