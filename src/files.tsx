@@ -117,8 +117,14 @@ export function FileBrowser({
       x: number;
       y: number;
       moved: boolean;
+      element: Element;
+      pointerId: number;
     } | null>(null),
     ignoreClick = useRef(false);
+  const pointerHandlers = useRef<{
+    move: (event: PointerEvent) => void;
+    up: (event: PointerEvent) => void;
+  } | null>(null);
   const generation = useRef({ local: 0, phone: 0 });
   const state = useRef(panes);
   useLayoutEffect(() => {
@@ -387,12 +393,17 @@ export function FileBrowser({
       side === "local" ? "phone" : "local",
     );
   };
-  const pointerMove = (event: React.PointerEvent) => {
+  const pointerMove = (event: PointerEvent) => {
     const current = drag.current;
     if (!current) return;
     if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > 6) {
-      if (!current.moved)
-        event.currentTarget.setPointerCapture?.(event.pointerId);
+      if (!current.moved) {
+        try {
+          current.element.setPointerCapture?.(current.pointerId);
+        } catch {
+          /* Window listeners still receive the in-app drop. */
+        }
+      }
       current.moved = true;
       setDragPoint({
         x: event.clientX,
@@ -402,7 +413,7 @@ export function FileBrowser({
       event.preventDefault();
     }
   };
-  const pointerUp = (event: React.PointerEvent) => {
+  const pointerUp = (event: PointerEvent) => {
     const current = drag.current;
     drag.current = null;
     setDragPoint(null);
@@ -427,6 +438,25 @@ export function FileBrowser({
         hit?.closest<HTMLElement>("[data-folder-path]")?.dataset.folderPath,
       );
   };
+  useLayoutEffect(() => {
+    pointerHandlers.current = { move: pointerMove, up: pointerUp };
+  });
+  useEffect(() => {
+    const move = (event: PointerEvent) => pointerHandlers.current?.move(event);
+    const up = (event: PointerEvent) => pointerHandlers.current?.up(event);
+    const cancel = () => {
+      drag.current = null;
+      setDragPoint(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+    };
+  }, []);
   const renderPane = (side: FileSide) => {
     const pane = panes[side];
     const opposite = side === "local" ? "phone" : "local";
@@ -728,13 +758,9 @@ export function FileBrowser({
                       x: event.clientX,
                       y: event.clientY,
                       moved: false,
+                      element: event.currentTarget,
+                      pointerId: event.pointerId,
                     };
-                  }}
-                  onPointerMove={pointerMove}
-                  onPointerUp={pointerUp}
-                  onPointerCancel={() => {
-                    drag.current = null;
-                    setDragPoint(null);
                   }}
                 >
                   <td>

@@ -257,8 +257,8 @@ describe("dual-pane file manager", () => {
       clientY: 10,
       pointerId: 1,
     });
-    fireEvent.pointerMove(source, { clientX: 300, clientY: 20, pointerId: 1 });
-    fireEvent.pointerUp(source, { clientX: 300, clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 20, pointerId: 1 });
+    fireEvent.pointerUp(window, { clientX: 300, clientY: 20, pointerId: 1 });
     await waitFor(() =>
       expect(api.startFileJob).toHaveBeenCalledWith(
         expect.objectContaining({
