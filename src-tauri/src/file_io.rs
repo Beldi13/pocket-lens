@@ -246,7 +246,10 @@ impl Remote {
         cmd.args([
             "-s",
             &self.serial,
-            "exec-out",
+            "shell",
+            "-T",
+            "-e",
+            "none",
             "env",
             &format!("CLASSPATH={}", self.jar),
             "app_process",
