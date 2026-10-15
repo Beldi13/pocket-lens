@@ -67,6 +67,23 @@ pub fn power(pid: u32, on: bool) -> Result<()> {
         }
         let window = search.windows[0];
         let previous = GetForegroundWindow();
+        struct Restore {
+            target: HWND,
+            previous: HWND,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                unsafe {
+                    if GetForegroundWindow() == self.target && !self.previous.is_null() {
+                        SetForegroundWindow(self.previous);
+                    }
+                }
+            }
+        }
+        let _restore = Restore {
+            target: window,
+            previous,
+        };
         if IsIconic(window) != 0 {
             ShowWindow(window, SW_RESTORE);
         }
@@ -113,9 +130,6 @@ pub fn power(pid: u32, on: bool) -> Result<()> {
             );
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
-        if GetForegroundWindow() == window && !previous.is_null() {
-            SetForegroundWindow(previous);
-        }
         if sent != inputs.len() as u32 {
             return Err(unavailable());
         }

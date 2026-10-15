@@ -675,7 +675,8 @@ export function FileBrowser({
                       (event.target as Element).closest(
                         "input,button:not(.file-entry-open)",
                       ) ||
-                      !["file", "directory"].includes(entry.kind)
+                      !["file", "directory"].includes(entry.kind) ||
+                      (side === "local" && !pane.listing.path)
                     )
                       return;
                     update(side, {
@@ -691,6 +692,7 @@ export function FileBrowser({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    if (!selectable.includes(entry)) return;
                     if (!pane.selected.includes(entry.path))
                       update(side, { selected: [entry.path] });
                     setContextMenu({
@@ -705,7 +707,8 @@ export function FileBrowser({
                       (event.target as Element).closest(
                         "input,button:not(.file-entry-open)",
                       ) ||
-                      !["file", "directory"].includes(entry.kind)
+                      !["file", "directory"].includes(entry.kind) ||
+                      (side === "local" && !pane.listing.path)
                     )
                       return;
                     const paths = pane.selected.includes(entry.path)
@@ -732,7 +735,7 @@ export function FileBrowser({
                       type="checkbox"
                       aria-label={`${label}: ${entry.name}`}
                       checked={pane.selected.includes(entry.path)}
-                      disabled={!["file", "directory"].includes(entry.kind)}
+                      disabled={!selectable.includes(entry)}
                       onChange={(e) =>
                         update(side, {
                           selected: e.target.checked
@@ -757,7 +760,8 @@ export function FileBrowser({
                           if (ignoreClick.current) return;
                           if (entry.kind === "directory")
                             void load(side, entry.path);
-                          else update(side, { selected: [entry.path] });
+                          else if (selectable.includes(entry))
+                            update(side, { selected: [entry.path] });
                         }}
                       >
                         {entry.name}
@@ -775,7 +779,7 @@ export function FileBrowser({
                   <td>
                     {entry.modified
                       ? new Date(entry.modified).toLocaleDateString(
-                          document.documentElement.lang,
+                          document.documentElement.lang || undefined,
                         )
                       : "—"}
                   </td>

@@ -104,10 +104,19 @@ impl FileManager {
         }
     }
     fn gate(&self, id: &str) -> Arc<AsyncMutex<()>> {
+        let key = self
+            .engine
+            .settings()
+            .profiles
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.identity.clone())
+            .map(|id| format!("identity:{id}"))
+            .unwrap_or_else(|| format!("profile:{id}"));
         self.gates
             .lock()
             .unwrap()
-            .entry(id.into())
+            .entry(key)
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
             .clone()
     }
@@ -460,6 +469,7 @@ impl FileManager {
                 true,
             );
             if request.operation == "delete" {
+                self.update(job, |s| s.state = "running".into(), true);
                 if request.source_side == "local" {
                     for path in paths {
                         cancelled(&cancel)?;

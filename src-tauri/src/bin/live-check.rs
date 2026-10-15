@@ -10,10 +10,12 @@ async fn main() {
 }
 async fn check() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 4 && !(args.len() == 5 && args[4] == "--artwork-only") {
+    if args.len() != 4
+        && !(args.len() == 5 && ["--artwork-only", "--files-only"].contains(&args[4].as_str()))
+    {
         return Err(AppError::new(
             "usage",
-            "pocket-lens-check <scrcpy-directory> <device-serial> <output-directory> [--artwork-only]",
+            "pocket-lens-check <scrcpy-directory> <device-serial> <output-directory> [--artwork-only|--files-only]",
         ));
     }
     let directory = PathBuf::from(&args[1]);
@@ -43,6 +45,9 @@ async fn check() -> Result<()> {
             None,
         )
         .await?;
+    if args.get(4).is_some_and(|arg| arg == "--files-only") {
+        return files_check(engine, &profile.id, &output).await;
+    }
     if args.get(4).is_some_and(|arg| arg == "--artwork-only") {
         engine.refresh().await?;
         engine.refresh_artwork().await;
@@ -122,6 +127,146 @@ async fn check() -> Result<()> {
     engine.stop(&profile.id).await?;
     println!(
         "Physical check passed: register, persist, open, duplicate-session prevention, record, graceful close, reopen.\nRecording: {recording}"
+    );
+    Ok(())
+}
+
+async fn files_check(engine: Arc<Engine>, id: &str, output: &std::path::Path) -> Result<()> {
+    use pocket_lens_lib::{
+        file_io::FileSystem,
+        files::{FileManager, FileRequest},
+    };
+    let local = output.join(format!("files-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(local.join("original/empty"))?;
+    std::fs::create_dir_all(local.join("returned"))?;
+    let name = "nombre ' $(echo test) Ñ 日本.apk";
+    let content = vec![0x5a; 1024 * 1024 + 7];
+    std::fs::write(local.join("original").join(name), &content)?;
+    let folder = format!("PocketLensCheck-{}", uuid::Uuid::new_v4());
+    let phone = format!("/sdcard/Download/{folder}");
+    let manager = Arc::new(FileManager::new(
+        engine,
+        None,
+        local.to_string_lossy().into(),
+    ));
+    manager
+        .edit(id, "phone", "/sdcard/Download", &folder, None, None)
+        .await?;
+    async fn run(manager: &Arc<FileManager>, request: FileRequest) -> Result<()> {
+        let job = manager.start(request)?;
+        for _ in 0..1800 {
+            let state = manager.jobs().into_iter().find(|j| j.id == job.id).unwrap();
+            match state.state.as_str() {
+                "completed" => return Ok(()),
+                "error" | "cancelled" => return Err(state.error.unwrap()),
+                "conflict" => return Err(AppError::new("fixture", "Unexpected fixture conflict")),
+                _ => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+        manager.cancel(&job.id)?;
+        Err(AppError::new("fixture", "Fixture transfer timed out"))
+    }
+    let request =
+        |operation: &str, source: &str, paths: Vec<String>, target: &str, directory: &str| {
+            FileRequest {
+                profile_id: id.into(),
+                operation: operation.into(),
+                source_side: source.into(),
+                paths,
+                target_side: target.into(),
+                target_directory: directory.into(),
+                confirmed_serial: None,
+            }
+        };
+    run(
+        &manager,
+        request(
+            "copy",
+            "local",
+            vec![local.join("original").to_string_lossy().into()],
+            "phone",
+            &phone,
+        ),
+    )
+    .await?;
+    let uploaded = format!("{phone}/original");
+    let listing = manager.list(id, "phone", &uploaded, None).await?;
+    assert!(
+        listing
+            .entries
+            .iter()
+            .any(|e| e.name == name && e.size == content.len() as u64)
+    );
+    manager
+        .edit(
+            id,
+            "phone",
+            &uploaded,
+            "renamed Ñ.apk",
+            Some(format!("{uploaded}/{name}")),
+            None,
+        )
+        .await?;
+    run(
+        &manager,
+        request(
+            "copy",
+            "phone",
+            vec![uploaded.clone()],
+            "local",
+            &local.join("returned").to_string_lossy(),
+        ),
+    )
+    .await?;
+    assert_eq!(
+        std::fs::read(local.join("returned/original/renamed Ñ.apk"))?,
+        content
+    );
+    assert!(local.join("returned/original/empty").is_dir());
+    std::fs::create_dir(local.join("moved"))?;
+    run(
+        &manager,
+        request(
+            "move",
+            "phone",
+            vec![format!("{uploaded}/renamed Ñ.apk")],
+            "local",
+            &local.join("moved").to_string_lossy(),
+        ),
+    )
+    .await?;
+    assert!(
+        !manager
+            .list(id, "phone", &uploaded, None)
+            .await?
+            .entries
+            .iter()
+            .any(|e| e.name.ends_with(".apk"))
+    );
+    let (_tx, cancel) = tokio::sync::watch::channel(false);
+    assert_eq!(
+        FileSystem::Local
+            .hash(
+                &local.join("moved/renamed Ñ.apk").to_string_lossy(),
+                &cancel
+            )
+            .await?,
+        FileSystem::Local
+            .hash(
+                &local.join("original").join(name).to_string_lossy(),
+                &cancel
+            )
+            .await?
+    );
+    // Only the unique directory this harness just created is ever removed.
+    assert!(phone.starts_with("/sdcard/Download/PocketLensCheck-"));
+    run(
+        &manager,
+        request("delete", "phone", vec![phone.clone()], "phone", &phone),
+    )
+    .await?;
+    println!(
+        "File hardware check passed: both directions, recursive and empty folders, Unicode and shell-special names, APK copied as data, rename, SHA-256 verified move, fixture-only permanent deletion."
     );
     Ok(())
 }

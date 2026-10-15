@@ -6,6 +6,8 @@ pub mod files;
 pub mod model;
 pub mod screen;
 pub mod store;
+#[cfg(feature = "diagnostics")]
+mod update_check;
 pub mod updates;
 
 use engine::Engine;
@@ -264,6 +266,10 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            #[cfg(feature = "diagnostics")]
+            if app.config().identifier == "dev.beldi.pocketlens.updatecheck" {
+                return update_check::setup(app);
+            }
             let vendor = if cfg!(debug_assertions) {
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/scrcpy")
             } else {
@@ -398,6 +404,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Could not start Pocket Lens");
     app.run(move |app, event| {
+        #[cfg(feature = "diagnostics")]
+        if app.config().identifier == "dev.beldi.pocketlens.updatecheck" {
+            return;
+        }
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             if shutdown.load(Ordering::SeqCst) == 2 {
                 return;
