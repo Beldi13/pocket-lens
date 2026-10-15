@@ -519,7 +519,13 @@ export function FileBrowser({
             aria-label={`${label}: ${t("refresh")}`}
             disabled={pane.loading}
             onClick={() =>
-              void load(side, pane.listing.path, pane.historyIndex)
+              void load(
+                side,
+                pane.historyIndex >= 0
+                  ? pane.listing.path
+                  : pane.draft || (side === "phone" ? "/sdcard" : ""),
+                pane.historyIndex >= 0 ? pane.historyIndex : undefined,
+              )
             }
           >
             <RefreshCw size={16} className={pane.loading ? "spin" : ""} />

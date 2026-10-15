@@ -1152,4 +1152,31 @@ mod tests {
             "app_closing"
         );
     }
+    #[tokio::test]
+    async fn screen_controls_require_control_and_a_live_managed_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut p = profile();
+        let id = p.id.clone();
+        p.options.control = false;
+        store::save(
+            &path,
+            &Settings {
+                profiles: vec![p.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let engine = Engine::new(Adb::new(temp.path()), path, None).unwrap();
+        assert_eq!(
+            engine.screen_power(&id, false).await.unwrap_err().code,
+            "control_disabled"
+        );
+        p.options.control = true;
+        engine.edit(id.clone(), p.name, p.options).unwrap();
+        assert_eq!(
+            engine.screen_power(&id, true).await.unwrap_err().code,
+            "session_inactive"
+        );
+    }
 }

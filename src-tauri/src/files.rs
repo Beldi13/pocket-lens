@@ -113,10 +113,13 @@ impl FileManager {
             .and_then(|p| p.identity.clone())
             .map(|id| format!("identity:{id}"))
             .unwrap_or_else(|| format!("profile:{id}"));
+        self.key_gate(&key)
+    }
+    fn key_gate(&self, key: &str) -> Arc<AsyncMutex<()>> {
         self.gates
             .lock()
             .unwrap()
-            .entry(key)
+            .entry(key.into())
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
             .clone()
     }
@@ -202,6 +205,21 @@ impl FileManager {
         let _guard = gate.try_lock().map_err(|_| issue("file_busy"))?;
         self.ready()?;
         let context = self.context(id, side == "phone", confirmed).await?;
+        let remote_gate = context
+            .phone
+            .as_ref()
+            .map(|r| self.key_gate(&r.operation_key()));
+        let _remote_guard = if let Some(gate) = &remote_gate {
+            match gate.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(_) => {
+                    context.cleanup().await;
+                    return Err(issue("file_busy"));
+                }
+            }
+        } else {
+            None
+        };
         let (_tx, cancel) = watch::channel(false);
         let result =
             async {
@@ -456,6 +474,15 @@ impl FileManager {
             )
             .await?;
         let mut stages: Vec<(FileSystem, String)> = vec![];
+        let remote_gate = context
+            .phone
+            .as_ref()
+            .map(|r| self.key_gate(&r.operation_key()));
+        let _remote_guard = if let Some(gate) = &remote_gate {
+            Some(gate.lock().await)
+        } else {
+            None
+        };
         let result = async {
             let source = context.fs(&request.source_side)?;
             let paths = deduplicate(&request.paths, request.source_side == "local")?;
@@ -971,6 +998,35 @@ mod tests {
         assert_eq!(manager.enqueue(req).unwrap_err().code, "app_closing");
         manager.unblock();
     }
+    #[tokio::test]
+    async fn failed_final_move_verification_keeps_every_original() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let a = temp.path().join("a.txt");
+        let b = temp.path().join("b.txt");
+        let target = temp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(&a, b"original a").unwrap();
+        std::fs::write(&b, b"original b").unwrap();
+        std::fs::write(target.join("b.txt"), b"existing b").unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "move",
+                vec![a.to_string_lossy().into(), b.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        wait(&manager, &job.id, Some("conflict")).await;
+        std::fs::write(target.join("a.txt"), b"changed after copying").unwrap();
+        manager.resolve(&job.id, "keep".into(), false).unwrap();
+        assert_eq!(
+            wait(&manager, &job.id, None).await.error.unwrap().code,
+            "file_checksum"
+        );
+        assert_eq!(std::fs::read(&a).unwrap(), b"original a");
+        assert_eq!(std::fs::read(&b).unwrap(), b"original b");
+    }
     #[test]
     fn selection_and_subdirectory_checks_use_boundaries() {
         assert!(descendant("C:\\photos\\new", "c:\\Photos", true));
@@ -979,6 +1035,19 @@ mod tests {
             deduplicate(&["/sdcard/a/b".into(), "/sdcard/a".into()], false).unwrap(),
             ["/sdcard/a"]
         );
+    }
+    #[test]
+    fn aliases_with_the_same_verified_identity_share_one_operation_gate() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        manager
+            .engine
+            .update(|s| {
+                s.profiles[1].identity = s.profiles[0].identity.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(Arc::ptr_eq(&manager.gate("a"), &manager.gate("b")));
     }
     #[tokio::test]
     async fn keep_both_preserves_extensions_and_directories() {

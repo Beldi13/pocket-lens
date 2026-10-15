@@ -191,6 +191,12 @@ pub struct Remote {
     jar: String,
 }
 impl Remote {
+    pub fn operation_key(&self) -> String {
+        self.identity.as_ref().map_or_else(
+            || format!("connection:{}", self.serial),
+            |id| format!("verified:{id}"),
+        )
+    }
     pub async fn connect(engine: &Engine, id: &str, confirmed: Option<String>) -> Result<Self> {
         let device = engine.verified_target(id, confirmed).await?;
         let jar = format!(
