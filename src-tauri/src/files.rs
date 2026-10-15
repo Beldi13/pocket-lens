@@ -742,6 +742,225 @@ fn fingerprint(nodes: &[Node]) -> Vec<(String, String, u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn manager(root: &std::path::Path) -> Arc<FileManager> {
+        let profile = |id: &str| DeviceProfile {
+            id: id.into(),
+            name: id.into(),
+            model: "Test".into(),
+            manufacturer: "".into(),
+            android_version: "14".into(),
+            sdk: 34,
+            identity: Some(id.into()),
+            usb_serials: vec![],
+            endpoints: vec![],
+            mdns_names: vec![],
+            options: MirrorOptions::default(),
+            artwork: None,
+            artwork_auto_attempted: false,
+        };
+        let settings = Settings {
+            profiles: vec![profile("a"), profile("b")],
+            ..Default::default()
+        };
+        let path = root.join("settings.json");
+        crate::store::save(&path, &settings).unwrap();
+        Arc::new(FileManager::new(
+            Arc::new(Engine::new(crate::adb::Adb::new(root), path, None).unwrap()),
+            None,
+            root.to_string_lossy().into(),
+        ))
+    }
+    fn request(id: &str, op: &str, paths: Vec<String>, target: &std::path::Path) -> FileRequest {
+        FileRequest {
+            profile_id: id.into(),
+            operation: op.into(),
+            source_side: "local".into(),
+            paths,
+            target_side: "local".into(),
+            target_directory: target.to_string_lossy().into(),
+            confirmed_serial: None,
+        }
+    }
+    async fn wait(manager: &FileManager, id: &str, state: Option<&str>) -> FileJob {
+        for _ in 0..1000 {
+            let job = manager.jobs().into_iter().find(|j| j.id == id).unwrap();
+            if state.map_or(
+                ["completed", "cancelled", "error"].contains(&job.state.as_str()),
+                |s| job.state == s,
+            ) {
+                return job;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "File job did not reach expected state: {:?}",
+            manager.jobs()
+        );
+    }
+    #[tokio::test]
+    async fn copies_and_moves_complete_trees_with_unicode_and_empty_folders() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(source.join("vacía")).unwrap();
+        std::fs::write(
+            source.join("Ñ_日本 'quote'.apk"),
+            b"literal APK, never executed",
+        )
+        .unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        let result = wait(&manager, &job.id, None).await;
+        assert_eq!(result.state, "completed", "{:?}", result.error);
+        assert!(source.exists());
+        assert_eq!(
+            std::fs::read(target.join("source/Ñ_日本 'quote'.apk")).unwrap(),
+            b"literal APK, never executed"
+        );
+        assert!(target.join("source/vacía").is_dir());
+        let next = temp.path().join("next");
+        std::fs::create_dir(&next).unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "move",
+                vec![source.to_string_lossy().into()],
+                &next,
+            ))
+            .unwrap();
+        assert_eq!(wait(&manager, &job.id, None).await.state, "completed");
+        assert!(!source.exists());
+        assert!(next.join("source/vacía").is_dir());
+    }
+    #[tokio::test]
+    async fn conflicts_keep_both_or_skip_without_deleting_move_sources() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("photo.txt");
+        let target = temp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(&source, b"new").unwrap();
+        std::fs::write(target.join("photo.txt"), b"old").unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        wait(&manager, &job.id, Some("conflict")).await;
+        manager.resolve(&job.id, "keep".into(), false).unwrap();
+        assert_eq!(wait(&manager, &job.id, None).await.state, "completed");
+        assert_eq!(std::fs::read(target.join("photo.txt")).unwrap(), b"old");
+        assert_eq!(std::fs::read(target.join("photo (1).txt")).unwrap(), b"new");
+        let job = manager
+            .enqueue(request(
+                "a",
+                "move",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        wait(&manager, &job.id, Some("conflict")).await;
+        manager.resolve(&job.id, "skip".into(), false).unwrap();
+        let result = wait(&manager, &job.id, None).await;
+        assert_eq!(result.state, "completed");
+        assert_eq!(result.skipped, 1);
+        assert!(source.exists());
+    }
+    #[tokio::test]
+    async fn folder_changed_while_waiting_does_not_lose_new_source_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir_all(target.join("source")).unwrap();
+        std::fs::write(source.join("one.txt"), b"new").unwrap();
+        let job = manager
+            .enqueue(request(
+                "a",
+                "move",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        wait(&manager, &job.id, Some("conflict")).await;
+        std::fs::write(source.join("added.txt"), b"arrived during move").unwrap();
+        manager.resolve(&job.id, "merge".into(), true).unwrap();
+        let result = wait(&manager, &job.id, None).await;
+        assert_eq!(result.error.unwrap().code, "file_changed");
+        assert!(source.join("one.txt").exists());
+        assert!(source.join("added.txt").exists());
+    }
+    #[tokio::test]
+    async fn cancelling_one_device_does_not_block_another_and_preserves_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("source.txt");
+        let target = temp.path().join("target");
+        let other = temp.path().join("other");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(&source, b"new").unwrap();
+        std::fs::write(target.join("source.txt"), b"old").unwrap();
+        let first = manager
+            .enqueue(request(
+                "a",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &target,
+            ))
+            .unwrap();
+        wait(&manager, &first.id, Some("conflict")).await;
+        let second = manager
+            .enqueue(request(
+                "b",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &other,
+            ))
+            .unwrap();
+        assert_eq!(wait(&manager, &second.id, None).await.state, "completed");
+        manager.cancel(&first.id).unwrap();
+        assert_eq!(wait(&manager, &first.id, None).await.state, "cancelled");
+        assert_eq!(std::fs::read(target.join("source.txt")).unwrap(), b"old");
+        assert!(source.exists());
+        assert!(
+            !std::fs::read_dir(&target).unwrap().any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".part"))
+        );
+    }
+    #[tokio::test]
+    async fn recursive_destination_is_rejected_and_admission_is_blocked_for_updates() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("a"), b"a").unwrap();
+        let req = request("a", "copy", vec![source.to_string_lossy().into()], &source);
+        let job = manager.enqueue(req.clone()).unwrap();
+        assert_eq!(
+            wait(&manager, &job.id, None).await.error.unwrap().code,
+            "file_recursive"
+        );
+        manager.block_and_cancel(false).await.unwrap();
+        assert_eq!(manager.enqueue(req).unwrap_err().code, "app_closing");
+        manager.unblock();
+    }
     #[test]
     fn selection_and_subdirectory_checks_use_boundaries() {
         assert!(descendant("C:\\photos\\new", "c:\\Photos", true));

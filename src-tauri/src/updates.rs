@@ -62,16 +62,19 @@ impl Updates {
                 .map_err(|_| issue("update_network"))?;
             let update = updater.check().await.map_err(|error| {
                 let text = error.to_string();
-                if text.contains("404") {
+                if matches!(error, tauri_plugin_updater::Error::ReleaseNotFound)
+                    || text.contains("404")
+                {
                     issue("update_no_stable")
                 } else {
                     issue("update_network")
                 }
             })?;
-            if let Some(update) = update {
+            if let Some(mut update) = update {
                 if !stable_newer(&app.package_info().version.to_string(), &update.version) {
                     return Ok(None);
                 }
+                update.timeout = Some(std::time::Duration::from_secs(600));
                 self.change(app, |s| {
                     s.version = Some(update.version.clone());
                     s.notes = update.body.clone().unwrap_or_default();
@@ -199,6 +202,28 @@ pub fn stable_newer(current: &str, candidate: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture(version: &str) -> tauri_plugin_updater::Update {
+        let app = tauri::test::mock_app();
+        let config = tauri_plugin_updater::Config {
+            pubkey: include_str!("../tests/fixtures/update.pub").trim().into(),
+            require_signed_version: true,
+            ..Default::default()
+        };
+        let updater = tauri_plugin_updater::UpdaterBuilder::new(app.handle(), config)
+            .target("windows-x86_64")
+            .executable_path(std::path::PathBuf::from("C:/isolated-test/pocket-lens.exe"))
+            .configure_client(|_| panic!("Verification fixtures must not use the network"))
+            .build()
+            .unwrap();
+        updater.restore_update(serde_json::json!({"version":version,"platforms":{"windows-x86_64":{"url":"https://example.invalid/fixture.exe","signature":include_str!("../tests/fixtures/update.sig").trim()}}})).unwrap().unwrap()
+    }
+    #[test]
+    fn signed_payload_and_announced_version_must_both_match() {
+        let payload = include_bytes!("../tests/fixtures/update-payload.txt");
+        fixture("0.3.1").verify(payload).unwrap();
+        assert!(fixture("0.3.1").verify(b"tampered installer").is_err());
+        assert!(fixture("9.0.0").verify(payload).is_err());
+    }
     #[test]
     fn only_newer_stable_versions_are_offered() {
         assert!(stable_newer("0.3.0", "0.3.1"));

@@ -443,11 +443,11 @@ impl FileSystem {
     ) -> Result<String> {
         enum Reader {
             Local(tokio::fs::File),
-            Remote(Child, BufReader<tokio::process::ChildStdout>),
+            Remote(Box<Child>, BufReader<tokio::process::ChildStdout>),
         }
         enum Writer {
             Local(tokio::fs::File),
-            Remote(Child, BufReader<tokio::process::ChildStdout>),
+            Remote(Box<Child>, BufReader<tokio::process::ChildStdout>),
         }
         let mut input = match self {
             Self::Local => Reader::Local(tokio::fs::File::open(local_path(source, false)?).await?),
@@ -460,7 +460,7 @@ impl FileSystem {
                 if header["size"].as_u64() != Some(expected) {
                     return Err(issue("file_changed"));
                 }
-                Reader::Remote(child, stdout)
+                Reader::Remote(Box::new(child), stdout)
             }
         };
         let mut output = match destination {
@@ -478,7 +478,7 @@ impl FileSystem {
                 let mut stdout =
                     BufReader::new(child.stdout.take().ok_or_else(|| issue("file_protocol"))?);
                 guarded(cancel, read_json(&mut stdout)).await?;
-                Writer::Remote(child, stdout)
+                Writer::Remote(Box::new(child), stdout)
             }
         };
         let mut remaining = expected;

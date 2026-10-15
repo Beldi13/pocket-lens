@@ -47,3 +47,4 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Wind
 
 [dev-dependencies]
 tempfile = "3"
+tauri = { version = "2", features = ["test"] }
