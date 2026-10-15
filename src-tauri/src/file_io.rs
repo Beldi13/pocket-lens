@@ -403,7 +403,38 @@ impl FileSystem {
         }
         match self {
             Self::Local => {
-                std::fs::rename(local_path(source, true)?, local_path(target, true)?)?;
+                let source = local_path(source, true)?;
+                let target = local_path(target, true)?;
+                #[cfg(windows)]
+                {
+                    use std::os::windows::ffi::OsStrExt;
+                    use windows_sys::Win32::Storage::FileSystem::{
+                        MOVEFILE_REPLACE_EXISTING, MoveFileExW,
+                    };
+                    let from: Vec<_> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+                    let to: Vec<_> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+                    // Flags=0 is an atomic no-replace operation, including across device queues.
+                    if unsafe {
+                        MoveFileExW(
+                            from.as_ptr(),
+                            to.as_ptr(),
+                            if replace {
+                                MOVEFILE_REPLACE_EXISTING
+                            } else {
+                                0
+                            },
+                        )
+                    } == 0
+                    {
+                        let error = std::io::Error::last_os_error();
+                        if [Some(80), Some(183)].contains(&error.raw_os_error()) {
+                            return Err(issue("file_exists"));
+                        }
+                        return Err(error.into());
+                    }
+                }
+                #[cfg(not(windows))]
+                std::fs::rename(source, target)?;
             }
             Self::Phone(r) => {
                 r.rpc(
