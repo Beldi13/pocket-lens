@@ -33,6 +33,7 @@ pub struct Engine {
     discovery_gate: AsyncMutex<()>,
     launch_gate: AsyncMutex<()>,
     artwork_gate: AsyncMutex<()>,
+    screen_gate: AsyncMutex<()>,
     shutting_down: AtomicBool,
     pub app: Option<tauri::AppHandle>,
 }
@@ -49,11 +50,12 @@ impl Engine {
             discovery_gate: AsyncMutex::new(()),
             launch_gate: AsyncMutex::new(()),
             artwork_gate: AsyncMutex::new(()),
+            screen_gate: AsyncMutex::new(()),
             shutting_down: AtomicBool::new(false),
             app,
         })
     }
-    fn update(&self, change: impl FnOnce(&mut Settings) -> Result<()>) -> Result<()> {
+    pub(crate) fn update(&self, change: impl FnOnce(&mut Settings) -> Result<()>) -> Result<()> {
         let mut settings = self.settings.lock().unwrap();
         let mut next = settings.clone();
         change(&mut next)?;
@@ -582,6 +584,101 @@ impl Engine {
         }
         Ok(())
     }
+    pub async fn screen_power(&self, id: &str, on: bool) -> Result<()> {
+        let _gate = self.screen_gate.lock().await;
+        let profile = self
+            .settings()
+            .profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
+        if !profile.options.control {
+            return Err(AppError::new(
+                "control_disabled",
+                "Enable control and reopen the session",
+            ));
+        }
+        let child = {
+            let sessions = self.sessions.lock().unwrap();
+            let session = sessions
+                .get(id)
+                .filter(|s| s.status.state == "running")
+                .ok_or_else(|| AppError::new("session_inactive", "Open the device screen first"))?;
+            session.child.clone()
+        };
+        let mut child = child.lock().await;
+        if child.try_wait()?.is_some() {
+            return Err(AppError::new("session_inactive", "Session has ended"));
+        }
+        let pid = child
+            .id()
+            .ok_or_else(|| AppError::new("session_inactive", "Session has ended"))?;
+        // Keep the owned child locked until input is complete, preventing PID reuse.
+        tokio::task::spawn_blocking(move || crate::screen::power(pid, on))
+            .await
+            .map_err(|_| AppError::new("screen_focus", "Screen action failed"))?
+    }
+    pub async fn verified_target(
+        &self,
+        id: &str,
+        serial: Option<String>,
+    ) -> Result<DetectedDevice> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(AppError::new("app_closing", "Pocket Lens is closing"));
+        }
+        let profile = self
+            .settings()
+            .profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
+        let confirmed = serial.is_some();
+        let device = self.resolve(&profile, serial).await?;
+        let fresh = self.adb.device(&device.serial).await?;
+        verify_identity(&profile, &fresh, confirmed)?;
+        if device.identity != fresh.identity {
+            return Err(AppError::new(
+                "identity_mismatch",
+                "Device changed before operation",
+            ));
+        }
+        Ok(fresh)
+    }
+    pub fn remember_directory(&self, id: &str, side: &str, path: &str) -> Result<()> {
+        self.update(|s| {
+            s.preferences
+                .file_directories
+                .insert(format!("{id}:{side}"), path.into());
+            Ok(())
+        })
+    }
+    pub async fn prepare_install(&self) -> Result<()> {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        let _launch = self.launch_gate.lock().await;
+        let ids: Vec<_> = self.sessions.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            if let Err(e) = self.stop(&id).await {
+                self.shutting_down.store(false, Ordering::SeqCst);
+                return Err(e);
+            }
+        }
+        if self.sessions.lock().unwrap().values().any(|s| {
+            s.status
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == "forced_close")
+        }) {
+            self.shutting_down.store(false, Ordering::SeqCst);
+            return Err(AppError::new(
+                "forced_close",
+                "A recording may not have finalized; update was not installed",
+            ));
+        }
+        Ok(())
+    }
+    pub fn resume_operations(&self) {
+        self.shutting_down.store(false, Ordering::SeqCst);
+    }
     pub async fn shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
         let _launch = self.launch_gate.lock().await;
@@ -714,6 +811,7 @@ pub fn build_arguments(
         format!("--serial={}", device.serial),
         format!("--window-title=Pocket Lens · {}", profile.name),
         "--no-terminal-title".into(),
+        "--shortcut-mod=lalt".into(),
         format!("--video-codec={}", o.codec),
         format!("--video-bit-rate={}M", o.bit_rate),
         format!("--max-fps={}", o.max_fps),

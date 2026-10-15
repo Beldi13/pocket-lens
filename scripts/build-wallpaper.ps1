@@ -17,3 +17,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Wallpaper helper Java compilation failed' }
 & java -cp $d8Jar com.android.tools.r8.D8 --release --min-api 24 --lib $androidJar --output $destination (Join-Path $buildDirectory 'dev/beldi/pocketlens/Wallpaper.class')
 if ($LASTEXITCODE -ne 0) { throw 'Wallpaper helper DEX compilation failed' }
 Write-Output 'Built original Pocket Lens wallpaper helper (Android 7+; read-only).'
+$filesDestination = Join-Path $projectRoot 'src-tauri/vendor/scrcpy/pocket-lens-files.jar'
+& javac --release 8 -classpath $androidJar -d $buildDirectory (Join-Path $projectRoot 'android/Files.java')
+if ($LASTEXITCODE -ne 0) { throw 'File helper Java compilation failed' }
+& java -cp $d8Jar com.android.tools.r8.D8 --release --min-api 21 --lib $androidJar --output $filesDestination (Join-Path $buildDirectory 'dev/beldi/pocketlens/Files.class')
+if ($LASTEXITCODE -ne 0) { throw 'File helper DEX compilation failed' }
+Write-Output 'Built original Pocket Lens file helper (Android 5+; shared storage only).'

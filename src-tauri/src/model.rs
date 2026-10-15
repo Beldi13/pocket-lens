@@ -121,6 +121,7 @@ pub struct AppPreferences {
     pub language: String,
     pub theme: String,
     pub autostart_initialized: bool,
+    pub file_directories: std::collections::HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

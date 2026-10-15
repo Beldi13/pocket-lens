@@ -1,6 +1,6 @@
 [package]
 name = "pocket-lens"
-version = "0.2.0"
+version = "0.3.0"
 description = "Your Android devices, one simple desktop"
 authors = ["Diego Joel Robles Muñoz"]
 edition = "2024"
@@ -37,9 +37,13 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = "0.4"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+sha2 = "0.10"
+trash = "5"
+tauri-plugin-updater = "2"
+semver = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tempfile = "3"

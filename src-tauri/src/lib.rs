@@ -1,8 +1,12 @@
 pub mod adb;
 pub mod artwork;
 pub mod engine;
+pub mod file_io;
+pub mod files;
 pub mod model;
+pub mod screen;
 pub mod store;
+pub mod updates;
 
 use engine::Engine;
 use model::*;
@@ -19,6 +23,7 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 
 type Backend = Arc<Engine>;
+type FileBackend = Arc<files::FileManager>;
 #[tauri::command]
 fn snapshot(app: tauri::AppHandle, engine: State<'_, Backend>) -> AppSnapshot {
     engine.snapshot(app.autolaunch().is_enabled().unwrap_or(false))
@@ -65,7 +70,14 @@ fn edit_device(
     engine.edit(id, name, options)
 }
 #[tauri::command]
-fn forget_device(engine: State<'_, Backend>, id: String) -> Result<()> {
+fn forget_device(
+    engine: State<'_, Backend>,
+    files: State<'_, FileBackend>,
+    id: String,
+) -> Result<()> {
+    if files.has_active(Some(&id)) {
+        return Err(file_io::issue("file_busy"));
+    }
     engine.forget(&id)
 }
 #[tauri::command]
@@ -93,6 +105,100 @@ async fn close_device(engine: State<'_, Backend>, id: String) -> Result<()> {
     engine.stop(&id).await
 }
 #[tauri::command]
+async fn screen_power(engine: State<'_, Backend>, id: String, on: bool) -> Result<()> {
+    engine.screen_power(&id, on).await
+}
+#[tauri::command]
+fn file_defaults(files: State<'_, FileBackend>, id: String) -> (String, String) {
+    files.defaults(&id)
+}
+#[tauri::command]
+fn file_jobs(files: State<'_, FileBackend>) -> Vec<files::FileJob> {
+    files.jobs()
+}
+#[tauri::command]
+async fn list_files(
+    files: State<'_, FileBackend>,
+    id: String,
+    side: String,
+    path: String,
+    confirmed_serial: Option<String>,
+) -> Result<file_io::DirectoryListing> {
+    files.list(&id, &side, &path, confirmed_serial).await
+}
+#[tauri::command]
+async fn edit_file(
+    files: State<'_, FileBackend>,
+    id: String,
+    side: String,
+    directory: String,
+    name: String,
+    source: Option<String>,
+    confirmed_serial: Option<String>,
+) -> Result<()> {
+    files
+        .edit(&id, &side, &directory, &name, source, confirmed_serial)
+        .await
+}
+#[tauri::command]
+fn start_file_job(
+    files: State<'_, FileBackend>,
+    request: files::FileRequest,
+) -> Result<files::FileJob> {
+    files.inner().enqueue(request)
+}
+#[tauri::command]
+fn cancel_file_job(files: State<'_, FileBackend>, id: String) -> Result<()> {
+    files.cancel(&id)
+}
+#[tauri::command]
+fn resolve_file_conflict(
+    files: State<'_, FileBackend>,
+    id: String,
+    choice: String,
+    all: bool,
+) -> Result<()> {
+    files.resolve(&id, choice, all)
+}
+#[tauri::command]
+fn update_status(updates: State<'_, updates::Updates>) -> updates::UpdateStatus {
+    updates.status()
+}
+#[tauri::command]
+async fn check_updates(
+    app: tauri::AppHandle,
+    updates: State<'_, updates::Updates>,
+) -> Result<updates::UpdateStatus> {
+    updates.check(&app).await
+}
+#[tauri::command]
+async fn download_update(
+    app: tauri::AppHandle,
+    updates: State<'_, updates::Updates>,
+) -> Result<updates::UpdateStatus> {
+    updates.download(&app).await
+}
+#[tauri::command]
+async fn install_update(
+    app: tauri::AppHandle,
+    engine: State<'_, Backend>,
+    files: State<'_, FileBackend>,
+    updates: State<'_, updates::Updates>,
+    cancel_jobs: bool,
+) -> Result<()> {
+    files.block_and_cancel(cancel_jobs).await?;
+    if let Err(error) = engine.prepare_install().await {
+        files.unblock();
+        return Err(error);
+    }
+    if let Err(error) = updates.install(&app) {
+        files.unblock();
+        engine.resume_operations();
+        return Err(error);
+    }
+    Ok(())
+}
+#[tauri::command]
 fn save_preferences(
     app: tauri::AppHandle,
     engine: State<'_, Backend>,
@@ -115,8 +221,14 @@ fn session_diagnostics(engine: State<'_, Backend>, id: String) -> String {
     engine.diagnostics(&id)
 }
 #[tauri::command]
-fn exit_app(app: tauri::AppHandle) {
+async fn exit_app(
+    app: tauri::AppHandle,
+    files: State<'_, FileBackend>,
+    cancel_jobs: Option<bool>,
+) -> Result<()> {
+    files.block_and_cancel(cancel_jobs.unwrap_or(false)).await?;
     app.exit(0);
+    Ok(())
 }
 #[tauri::command]
 fn open_source(app: tauri::AppHandle) -> Result<()> {
@@ -142,6 +254,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
@@ -162,6 +275,7 @@ pub fn run() {
                 "scrcpy-server",
                 "bundle-manifest.json",
                 "pocket-lens-wallpaper.jar",
+                "pocket-lens-files.jar",
             ] {
                 if !vendor.join(file).exists() {
                     return Err(std::io::Error::other(format!(
@@ -186,6 +300,12 @@ pub fn run() {
                     .map_err(|e| std::io::Error::other(e.message))?;
             }
             app.manage(engine.clone());
+            app.manage(Arc::new(files::FileManager::new(
+                engine.clone(),
+                Some(app.handle().clone()),
+                app.path().download_dir()?.to_string_lossy().into(),
+            )));
+            app.manage(updates::Updates::default());
             let artwork_engine = engine.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
@@ -204,7 +324,14 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        if app.state::<FileBackend>().has_active(None) {
+                            show(app);
+                            let _ = app.emit("exit://requested", true);
+                        } else {
+                            app.exit(0);
+                        }
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -251,6 +378,18 @@ pub fn run() {
             remove_artwork,
             open_device,
             close_device,
+            screen_power,
+            file_defaults,
+            file_jobs,
+            list_files,
+            edit_file,
+            start_file_job,
+            cancel_file_job,
+            resolve_file_conflict,
+            update_status,
+            check_updates,
+            download_update,
+            install_update,
             save_preferences,
             session_diagnostics,
             exit_app,
@@ -272,6 +411,13 @@ pub fn run() {
                 let app = app.clone();
                 let shutdown = shutdown.clone();
                 tauri::async_runtime::spawn(async move {
+                    let files = app.state::<FileBackend>().inner().clone();
+                    if files.block_and_cancel(true).await.is_err() {
+                        shutdown.store(0, Ordering::SeqCst);
+                        show(&app);
+                        let _ = app.emit("engine://error", file_io::issue("file_busy"));
+                        return;
+                    }
                     engine.shutdown().await;
                     shutdown.store(2, Ordering::SeqCst);
                     app.exit(0);

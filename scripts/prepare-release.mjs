@@ -1,0 +1,17 @@
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import path from "node:path";
+const tag = process.argv[2];
+const { version } = JSON.parse(await readFile("package.json", "utf8"));
+if (tag !== `v${version}` || !/^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(tag)) throw new Error("Tag and app version must match");
+const directory = "src-tauri/target/release/bundle/nsis";
+const installers = (await readdir(directory)).filter((name) => name.endsWith("-setup.exe"));
+if (installers.length !== 1) throw new Error("Expected exactly one installer");
+const name = installers[0];
+const signature = (await readFile(path.join(directory, `${name}.sig`), "utf8")).trim();
+if (!signature) throw new Error("Missing updater signature");
+const manifest = { version, notes: await readFile("docs/releases/0.3.0.md", "utf8"), pub_date: new Date().toISOString(), platforms: { "windows-x86_64": { url: `https://github.com/Beldi13/pocket-lens/releases/download/${tag}/${encodeURIComponent(name)}`, signature } } };
+await writeFile(path.join(directory, "latest.json"), JSON.stringify(manifest, null, 2) + "\n");
+const hash = createHash("sha256").update(await readFile(path.join(directory, name))).digest("hex");
+await writeFile(path.join(directory, "SHA256SUMS.txt"), `${hash}  ${name}\n`);
+console.log(`Prepared signed ${tag} update manifest for ${name}.`);
