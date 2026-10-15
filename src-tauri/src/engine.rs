@@ -84,9 +84,7 @@ impl Engine {
         })
     }
     pub async fn refresh(&self) -> Result<Discovery> {
-        let Ok(_gate) = self.discovery_gate.try_lock() else {
-            return Ok(self.discovery.lock().unwrap().clone());
-        };
+        let _gate = self.discovery_gate.lock().await;
         let discovery = self.adb.discover().await?;
         *self.discovery.lock().unwrap() = discovery.clone();
         if let Some(app) = &self.app {
