@@ -81,12 +81,13 @@ export const workspaceEs = {
   job_error: "No se completó",
   screenOn: "Encender pantalla",
   screenOff: "Apagar pantalla",
-  screenOnHint: "Pantalla física · Alt izquierdo + Mayús + O",
+  screenOnHint:
+    "Pantalla física · Alt izquierdo + Mayús + O. Si Android está en reposo, haz clic derecho en su ventana para despertarlo.",
   screenOffHint:
     "Pantalla física · Alt izquierdo + O · continúa la imagen en la PC",
   screenSent: "Orden de pantalla enviada a esta sesión.",
   screenHelp:
-    "Durante la sesión: Alt izquierdo + O apaga la pantalla física sin detener la imagen. Alt izquierdo + Mayús + O la enciende. Requiere el control habilitado y la ventana del celular enfocada.",
+    "Durante la sesión: Alt izquierdo + O apaga la pantalla física sin detener la imagen. Alt izquierdo + Mayús + O la enciende. Requiere el control habilitado y la ventana del celular enfocada. Si Android está en reposo, haz clic derecho en su ventana para despertarlo.",
   updates: "Actualizaciones",
   updatesHint:
     "Buscamos versiones estables al abrir. Tú decides cuándo descargar e instalar.",
@@ -252,11 +253,12 @@ export const workspaceEn: Record<keyof typeof workspaceEs, string> = {
   job_error: "Not completed",
   screenOn: "Turn screen on",
   screenOff: "Turn screen off",
-  screenOnHint: "Physical screen · Left Alt + Shift + O",
+  screenOnHint:
+    "Physical screen · Left Alt + Shift + O. If Android is asleep, right-click its window to wake it.",
   screenOffHint: "Physical screen · Left Alt + O · mirroring continues",
   screenSent: "Screen command sent to this session.",
   screenHelp:
-    "During a session: Left Alt + O turns the physical screen off while mirroring continues. Left Alt + Shift + O turns it on. Device control must be enabled and the phone window focused.",
+    "During a session: Left Alt + O turns the physical screen off while mirroring continues. Left Alt + Shift + O turns it on. Device control must be enabled and the phone window focused. If Android is asleep, right-click its window to wake it.",
   updates: "Updates",
   updatesHint:
     "We check for stable releases at startup. You choose when to download and install.",

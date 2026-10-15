@@ -69,6 +69,7 @@ async fn check() -> Result<()> {
         );
         return Ok(());
     }
+    let result = async {
     let session = engine.open(profile.id.clone(), None).await?;
     assert_eq!(
         engine
@@ -97,10 +98,10 @@ async fn check() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(700)).await;
     let on = engine
         .adb
-        .run(&["-s", &device.serial, "shell", "dumpsys", "display"])
+        .run(&["-s", &device.serial, "shell", "dumpsys", "SurfaceFlinger"])
         .await?;
     std::fs::write(output.join("screen-on.txt"), &on)?;
-    if !on.lines().any(|line| line.trim() == "mState=ON") {
+    if on.lines().map(str::trim).find(|line| line.starts_with("powerMode=")) != Some("powerMode=On") {
         return Err(AppError::new(
             "fixture",
             "Physical display did not report ON",
@@ -113,9 +114,9 @@ async fn check() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(700)).await;
     let display = engine
         .adb
-        .run(&["-s", &device.serial, "shell", "dumpsys", "display"])
+        .run(&["-s", &device.serial, "shell", "dumpsys", "SurfaceFlinger"])
         .await?;
-    if !display.lines().any(|line| line.trim() == "mState=OFF") {
+    if display.lines().map(str::trim).find(|line| line.starts_with("powerMode=")) != Some("powerMode=Off") {
         return Err(AppError::new(
             "fixture",
             "Physical display did not report OFF",
@@ -158,6 +159,15 @@ async fn check() -> Result<()> {
         "Physical check passed: register, persist, open, duplicate-session prevention, record, graceful close, reopen.\nRecording: {recording}"
     );
     Ok(())
+    }.await;
+    if result.is_err() {
+        let _ = std::fs::write(
+            output.join("scrcpy-session.txt"),
+            engine.diagnostics(&profile.id),
+        );
+    }
+    engine.shutdown().await;
+    result
 }
 
 async fn files_check(engine: Arc<Engine>, id: &str, output: &std::path::Path) -> Result<()> {

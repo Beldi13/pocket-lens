@@ -7,7 +7,8 @@ pub fn power(pid: u32, on: bool) -> Result<()> {
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-                SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+                KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VK_CONTROL,
+                VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
             },
             WindowsAndMessaging::{
                 EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
@@ -36,9 +37,9 @@ pub fn power(pid: u32, on: bool) -> Result<()> {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
-                    wVk: code,
-                    wScan: 0,
-                    dwFlags: if up { KEYEVENTF_KEYUP } else { 0 },
+                    wVk: 0,
+                    wScan: unsafe { MapVirtualKeyW(code as u32, MAPVK_VK_TO_VSC) as u16 },
+                    dwFlags: KEYEVENTF_SCANCODE | if up { KEYEVENTF_KEYUP } else { 0 },
                     time: 0,
                     dwExtraInfo: 0,
                 },
