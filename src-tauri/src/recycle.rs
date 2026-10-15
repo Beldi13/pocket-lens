@@ -175,11 +175,14 @@ mod tests {
         std::fs::write(&path, b"recoverable fixture").unwrap();
         super::recycle(path.clone()).unwrap();
         assert!(!path.exists());
-        let item = trash::os_limited::list()
+        let parent = temp.path().canonicalize().unwrap();
+        let mut item = trash::os_limited::list()
             .unwrap()
             .into_iter()
-            .find(|item| item.name.as_os_str() == std::ffi::OsStr::new(&name))
+            .find(|item| item.original_parent.canonicalize().ok().as_ref() == Some(&parent))
             .expect("File must be recoverable, never permanently removed");
+        // Shell display names may hide .txt; restore using the fixture's known full filename.
+        item.name = name.into();
         trash::os_limited::restore_all([item]).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), b"recoverable fixture");
     }
