@@ -147,7 +147,6 @@ mod native {
                     | FOF_NOCONFIRMATION
                     | FOF_NOERRORUI
                     | FOF_NOCONFIRMMKDIR
-                    | FOF_WANTNUKEWARNING
                     | FOF_ALLOWUNDO
                     | FOFX_ADDUNDORECORD
                     | FOFX_RECYCLEONDELETE
@@ -176,7 +175,7 @@ mod tests {
         std::fs::write(&path, b"recoverable fixture").unwrap();
         super::recycle(path.clone()).unwrap();
         assert!(!path.exists());
-        let item = trash::list()
+        let item = trash::os_limited::list()
             .unwrap()
             .into_iter()
             .find(|item| item.name == name)
