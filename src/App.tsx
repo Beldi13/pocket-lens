@@ -436,16 +436,24 @@ export default function App() {
           )}
           {view === "devices" && (
             <>
-              <section className="hero">
+              <section
+                className={`hero ${snapshot.settings.profiles.length ? "hero-compact" : ""}`}
+              >
                 <div>
                   <span className="eyebrow">
                     <span />
                     {t("eyebrow")}
                   </span>
                   <h1>
-                    {t("title")}
-                    <br />
-                    <em>{t("titleAccent")}</em>
+                    {snapshot.settings.profiles.length ? (
+                      t("devices")
+                    ) : (
+                      <>
+                        {t("title")}
+                        <br />
+                        <em>{t("titleAccent")}</em>
+                      </>
+                    )}
                   </h1>
                   <p>{t("subtitle")}</p>
                   <button

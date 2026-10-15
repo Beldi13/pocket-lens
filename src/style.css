@@ -1759,6 +1759,35 @@ html {
     font-size: 9px;
   }
 }
+.hero-compact {
+  min-height: 0;
+  padding-bottom: 6px;
+}
+.hero-compact > div:first-child {
+  position: relative;
+  width: 100%;
+  padding-right: 190px;
+}
+.hero-compact h1 {
+  font-size: 28px;
+  margin: 10px 0;
+}
+.hero-compact p {
+  max-width: none;
+  margin-bottom: 0;
+  font-size: 11px;
+}
+.hero-compact .primary {
+  position: absolute;
+  top: 30px;
+  right: 0;
+}
+.hero-compact .hero-art {
+  display: none;
+}
+.hero-compact + .stats-row {
+  margin-bottom: 24px;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,
