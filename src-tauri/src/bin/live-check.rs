@@ -89,11 +89,40 @@ async fn check() -> Result<()> {
         engine.shutdown().await;
         return Err(first.error.unwrap());
     }
+    // Opt-in diagnostic owns this recording/session; never changes the user's saved profile.
+    if let Err(error) = engine.screen_power(&profile.id, true).await {
+        engine.stop(&profile.id).await?;
+        return Err(error);
+    }
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let on = engine
+        .adb
+        .run(&["-s", &device.serial, "shell", "dumpsys", "display"])
+        .await?;
+    std::fs::write(output.join("screen-on.txt"), &on)?;
+    if !on.lines().any(|line| line.trim() == "mState=ON") {
+        return Err(AppError::new(
+            "fixture",
+            "Physical display did not report ON",
+        ));
+    }
+    if let Err(error) = engine.screen_power(&profile.id, false).await {
+        engine.stop(&profile.id).await?;
+        return Err(error);
+    }
+    tokio::time::sleep(Duration::from_millis(700)).await;
     let display = engine
         .adb
         .run(&["-s", &device.serial, "shell", "dumpsys", "display"])
         .await?;
+    if !display.lines().any(|line| line.trim() == "mState=OFF") {
+        return Err(AppError::new(
+            "fixture",
+            "Physical display did not report OFF",
+        ));
+    }
     std::fs::write(output.join("display-state.txt"), display)?;
+    assert!(engine.settings().profiles[0].options.turn_screen_off);
     engine.stop(&profile.id).await?;
     tokio::time::sleep(Duration::from_millis(600)).await;
     let closed = engine

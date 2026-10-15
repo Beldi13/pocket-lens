@@ -486,6 +486,14 @@ impl FileManager {
         let result = async {
             let source = context.fs(&request.source_side)?;
             let paths = deduplicate(&request.paths, request.source_side == "local")?;
+            // Reject roots before traversal/removal; never discover this only after deleting children.
+            for path in &paths {
+                if request.source_side == "local" {
+                    local_path(path, true)?;
+                } else if path.trim_end_matches('/') == "/sdcard" {
+                    return Err(issue("file_root"));
+                }
+            }
             let nodes = Self::inventory(&source, &paths, &cancel).await?;
             self.update(
                 job,
