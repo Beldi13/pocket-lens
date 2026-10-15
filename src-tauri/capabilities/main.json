@@ -1,0 +1,1 @@
+{"identifier":"main","description":"Pocket Lens main window; no general shell access","windows":["main"],"permissions":["core:default","dialog:allow-open"]}

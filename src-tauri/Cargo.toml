@@ -1,0 +1,43 @@
+[package]
+name = "pocket-lens"
+version = "0.1.0"
+description = "Your Android devices, one simple desktop"
+authors = ["Diego Joel Robles Muñoz"]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/Beldi13/pocket-lens"
+default-run = "pocket-lens"
+
+[features]
+diagnostics = []
+
+[[bin]]
+name = "pocket-lens-check"
+path = "src/bin/live-check.rs"
+required-features = ["diagnostics"]
+
+[lib]
+name = "pocket_lens_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "3"
