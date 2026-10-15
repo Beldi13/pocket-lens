@@ -58,6 +58,19 @@ jobs:
       - name: Exercise signed installer update in an isolated application
         shell: pwsh
         run: ./scripts/check-update.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: updater-acceptance-results
+          path: |
+            .cache/update-install-check/started-*.txt
+            .cache/update-install-check/before.json
+            .cache/update-install-check/passed.json
+            .cache/update-install-check/failed.txt
+            .cache/update-install-check/verified
+            .cache/update-install-check/baseline*.log
+            .cache/update-install-check/server*.log
+          if-no-files-found: ignore
       - name: Prepare signed update manifest
         if: startsWith(github.ref, 'refs/tags/v')
         run: node scripts/prepare-release.mjs $env:GITHUB_REF_NAME

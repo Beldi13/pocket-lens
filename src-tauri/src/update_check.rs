@@ -4,16 +4,25 @@ use tauri::{App, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 pub fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let config = app.path().app_config_dir()?;
+    std::fs::create_dir_all(&config)?;
+    let marker = config.join("acceptance-directory.txt");
+    // ShellExecute/NSIS relaunch does not reliably inherit the original process environment.
     let output = std::env::var_os("POCKET_LENS_UPDATE_CHECK")
         .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::fs::read_to_string(&marker)
+                .ok()
+                .map(std::path::PathBuf::from)
+        })
         .ok_or("Missing explicit acceptance harness directory")?;
     if !output.is_absolute() || !output.join("authorized-fixture").is_file() {
         return Err("Acceptance fixture marker missing".into());
     }
-    let config = app.path().app_config_dir()?;
-    std::fs::create_dir_all(&config)?;
+    std::fs::write(marker, output.to_string_lossy().as_bytes())?;
     let settings_path = config.join("settings.json");
     let version = app.package_info().version.to_string();
+    std::fs::write(output.join(format!("started-{version}.txt")), &version)?;
     if version == "0.3.0" {
         let mut settings = Settings::default();
         settings.preferences.language = "es".into();

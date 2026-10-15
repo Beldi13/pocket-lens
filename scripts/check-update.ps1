@@ -40,11 +40,16 @@ try {
     $initial = Start-Process -FilePath "$fixture/0.3.0.exe" -ArgumentList @('/S', "/D=$install") -PassThru -WindowStyle Hidden -Wait
     if ($initial.ExitCode -ne 0) { throw 'Fixture baseline install failed' }
     $env:POCKET_LENS_UPDATE_CHECK = $fixture
-    Start-Process -FilePath "$install/pocket-lens.exe" -PassThru -WindowStyle Hidden | Out-Null
+    $baseline = Start-Process -FilePath "$install/pocket-lens.exe" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$fixture/baseline.log" -RedirectStandardError "$fixture/baseline-error.log"
     $deadline = (Get-Date).AddMinutes(4)
     while (!(Test-Path "$fixture/passed.json") -and !(Test-Path "$fixture/failed.txt") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
     if (Test-Path "$fixture/failed.txt") { throw (Get-Content -Raw "$fixture/failed.txt") }
-    if (!(Test-Path "$fixture/passed.json")) { throw 'Signed installer did not relaunch the updated fixture' }
+    if (!(Test-Path "$fixture/passed.json")) {
+        $baseline.Refresh()
+        Write-Output "Baseline exited: $($baseline.HasExited); data fixture: $(Test-Path "$fixture/before.json"); signature verified: $(Test-Path "$fixture/verified"); installed version: $((Get-Item "$install/pocket-lens.exe").VersionInfo.ProductVersion)"
+        if (Test-Path "$fixture/baseline-error.log") { Get-Content -LiteralPath "$fixture/baseline-error.log" }
+        throw 'Signed installer did not relaunch the updated fixture'
+    }
     Get-Content -Raw "$fixture/passed.json"
     $uninstaller = Get-ChildItem -LiteralPath $install -Filter '*uninstall*.exe' | Select-Object -First 1
     if ($uninstaller) { Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -WindowStyle Hidden -Wait }
