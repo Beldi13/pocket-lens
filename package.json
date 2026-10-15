@@ -9,7 +9,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "tauri": "tauri",
-    "vendor:prepare": "node scripts/prepare-vendor.mjs",
+    "vendor:prepare": "node scripts/prepare-vendor.mjs && node scripts/prepare-notices.mjs",
     "brand:generate": "node scripts/generate-brand.mjs",
     "verify": "npm run lint && npm test && npm run build"
   },

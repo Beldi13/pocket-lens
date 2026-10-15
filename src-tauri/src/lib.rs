@@ -164,12 +164,12 @@ pub fn run() {
                 )
                 .map_err(|e| std::io::Error::other(e.message))?,
             );
-            if !engine.settings().preferences.autostart_initialized {
-                if app.autolaunch().enable().is_ok() {
-                    engine
-                        .initialized_autostart()
-                        .map_err(|e| std::io::Error::other(e.message))?;
-                }
+            if !engine.settings().preferences.autostart_initialized
+                && app.autolaunch().enable().is_ok()
+            {
+                engine
+                    .initialized_autostart()
+                    .map_err(|e| std::io::Error::other(e.message))?;
             }
             app.manage(engine.clone());
             let open =
@@ -201,10 +201,10 @@ pub fn run() {
                 .build(app)?;
             tauri::async_runtime::spawn(async move {
                 loop {
-                    if let Err(error) = engine.refresh().await {
-                        if let Some(app) = &engine.app {
-                            let _ = app.emit("engine://error", error);
-                        }
+                    if let Err(error) = engine.refresh().await
+                        && let Some(app) = &engine.app
+                    {
+                        let _ = app.emit("engine://error", error);
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(6)).await;
                 }

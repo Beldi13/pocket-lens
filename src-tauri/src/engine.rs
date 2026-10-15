@@ -159,14 +159,7 @@ impl Engine {
                     .iter_mut()
                     .find(|p| p.id == id)
                     .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
-                if let (Some(expected), Some(actual)) = (&profile.identity, &device.identity) {
-                    if expected != actual {
-                        return Err(AppError::new(
-                            "identity_mismatch",
-                            "This is a different physical device",
-                        ));
-                    }
-                }
+                verify_identity(profile, &device, true)?;
                 if profile.identity.is_none() {
                     profile.identity = device.identity.clone();
                 }
@@ -263,18 +256,13 @@ impl Engine {
             .filter(|d| matches_profile(profile, d))
             .min_by_key(|d| if d.transport == "usb" { 0 } else { 1 })
         {
-            return self.adb.device(&found.serial).await;
+            let fresh = self.adb.device(&found.serial).await?;
+            verify_identity(profile, &fresh, false)?;
+            return Ok(fresh);
         }
         if let Some(serial) = confirmed_serial {
             let device = self.adb.device(&serial).await?;
-            if let (Some(expected), Some(actual)) = (&profile.identity, &device.identity) {
-                if expected != actual {
-                    return Err(AppError::new(
-                        "identity_mismatch",
-                        "This is a different physical device",
-                    ));
-                }
-            }
+            verify_identity(profile, &device, true)?;
             return Ok(device);
         }
         let mut endpoints: Vec<_> = discovery
@@ -321,9 +309,11 @@ impl Engine {
             .into_iter()
             .find(|p| p.id == id)
             .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
+        let explicitly_confirmed = confirmed_serial.is_some();
         let device = self.resolve(&profile, confirmed_serial).await?;
         // Re-read identity immediately before launch, including on an already known endpoint.
         let verified = self.adb.device(&device.serial).await?;
+        verify_identity(&profile, &verified, explicitly_confirmed)?;
         if device.identity != verified.identity {
             return Err(AppError::new(
                 "identity_mismatch",
@@ -400,6 +390,9 @@ impl Engine {
                 let Some(session) = sessions.get_mut(&profile_id) else {
                     break;
                 };
+                if !Arc::ptr_eq(&session.child, &child) {
+                    break;
+                }
                 match exit {
                     Ok(Some(exit)) => {
                         let details = log.lock().unwrap().clone();
@@ -502,6 +495,27 @@ fn validate_name(name: &str) -> Result<()> {
     }
     Ok(())
 }
+fn verify_identity(
+    profile: &DeviceProfile,
+    device: &DetectedDevice,
+    confirmed: bool,
+) -> Result<()> {
+    if let (Some(expected), Some(actual)) = (&profile.identity, &device.identity)
+        && expected != actual
+    {
+        return Err(AppError::new(
+            "identity_mismatch",
+            "This is a different physical device",
+        ));
+    }
+    if !confirmed && !matches_profile(profile, device) {
+        return Err(AppError::new(
+            "identity_confirmation",
+            "Select and confirm the device before opening",
+        ));
+    }
+    Ok(())
+}
 fn link(profile: &mut DeviceProfile, device: &DetectedDevice, services: &[MdnsService]) {
     let aliases = if device.transport == "usb" {
         &mut profile.usb_serials
@@ -514,12 +528,17 @@ fn link(profile: &mut DeviceProfile, device: &DetectedDevice, services: &[MdnsSe
         aliases.insert(0, device.serial.clone());
         aliases.truncate(8);
     }
-    for service in services
-        .iter()
-        .filter(|s| s.endpoint == device.serial && s.kind != "_adb-tls-pairing._tcp")
-    {
+    for service in services.iter().filter(|s| {
+        (s.endpoint == device.serial
+            || device.serial.trim_end_matches('.') == format!("{}.{}", s.name, s.kind))
+            && s.kind != "_adb-tls-pairing._tcp"
+    }) {
         if !profile.mdns_names.contains(&service.name) {
             profile.mdns_names.push(service.name.clone());
+        }
+        if !profile.endpoints.contains(&service.endpoint) {
+            profile.endpoints.insert(0, service.endpoint.clone());
+            profile.endpoints.truncate(8);
         }
     }
 }
@@ -733,5 +752,80 @@ mod tests {
             classify_failure("ERROR: Could not create h265 video encoder").code,
             "codec"
         );
+    }
+    #[test]
+    fn a_reused_endpoint_is_rejected_even_when_explicitly_selected() {
+        let p = profile();
+        let mut d = DetectedDevice {
+            serial: "192.168.1.2:5555".into(),
+            state: "device".into(),
+            transport: "wifi".into(),
+            identity: Some("different".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            verify_identity(&p, &d, false).unwrap_err().code,
+            "identity_mismatch"
+        );
+        assert_eq!(
+            verify_identity(&p, &d, true).unwrap_err().code,
+            "identity_mismatch"
+        );
+        d.identity = None;
+        assert_eq!(
+            verify_identity(&p, &d, false).unwrap_err().code,
+            "identity_confirmation"
+        );
+        assert!(verify_identity(&p, &d, true).is_ok());
+    }
+    #[test]
+    fn auto_connected_mdns_names_preserve_connection_hints() {
+        let mut p = profile();
+        let d = DetectedDevice {
+            serial: "adb-test-abc._adb-tls-connect._tcp".into(),
+            transport: "wifi".into(),
+            ..Default::default()
+        };
+        link(
+            &mut p,
+            &d,
+            &[MdnsService {
+                name: "adb-test-abc".into(),
+                kind: "_adb-tls-connect._tcp".into(),
+                endpoint: "192.168.1.5:43000".into(),
+            }],
+        );
+        assert_eq!(p.mdns_names, ["adb-test-abc"]);
+        assert_eq!(p.endpoints, ["192.168.1.5:43000"]);
+    }
+    #[test]
+    fn editing_or_forgetting_one_profile_preserves_another() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let first = profile();
+        let mut second = profile();
+        second.id = "other".into();
+        second.identity = Some("other-physical-phone".into());
+        let settings = Settings {
+            profiles: vec![first, second.clone()],
+            ..Default::default()
+        };
+        store::save(&path, &settings).unwrap();
+        let engine = Engine::new(Adb::new(temp.path()), path, None).unwrap();
+        engine
+            .edit(
+                "p".into(),
+                "Changed".into(),
+                MirrorOptions {
+                    max_fps: 30,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(engine.settings().profiles[1].options, second.options);
+        engine.forget("p").unwrap();
+        let remaining = engine.settings().profiles;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, second.id);
     }
 }

@@ -62,11 +62,10 @@ impl Adb {
     pub async fn discover(&self) -> Result<Discovery> {
         let mut devices = parse_devices(&self.run(&["devices", "-l"]).await?);
         for device in &mut devices {
-            if device.state == "device" {
-                if let Ok(properties) = self.run(&["-s", &device.serial, "shell", "getprop"]).await
-                {
-                    apply_properties(device, &properties);
-                }
+            if device.state == "device"
+                && let Ok(properties) = self.run(&["-s", &device.serial, "shell", "getprop"]).await
+            {
+                apply_properties(device, &properties);
             }
         }
         let (services, warning) = match self.run(&["mdns", "services"]).await {

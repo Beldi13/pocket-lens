@@ -72,5 +72,8 @@ await writeFile(
     2,
   ),
 );
+if (!path.resolve(extraction).startsWith(path.resolve(cache) + path.sep)) {
+  throw new Error("Extraction cleanup must stay inside the project cache");
+}
 await rm(extraction, { recursive: true, force: true });
 console.log(`Official scrcpy ${version} bundle verified and prepared.`);
