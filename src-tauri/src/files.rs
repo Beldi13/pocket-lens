@@ -62,6 +62,7 @@ pub struct FileManager {
     app: Option<tauri::AppHandle>,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     gates: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    tails: Mutex<HashMap<String, watch::Receiver<bool>>>,
     blocked: AtomicBool,
     local_default: String,
 }
@@ -99,21 +100,23 @@ impl FileManager {
             app,
             jobs: Mutex::default(),
             gates: Mutex::default(),
+            tails: Mutex::default(),
             blocked: AtomicBool::new(false),
             local_default,
         }
     }
     fn gate(&self, id: &str) -> Arc<AsyncMutex<()>> {
-        let key = self
-            .engine
+        self.key_gate(&self.queue_key(id))
+    }
+    fn queue_key(&self, id: &str) -> String {
+        self.engine
             .settings()
             .profiles
             .iter()
             .find(|p| p.id == id)
             .and_then(|p| p.identity.clone())
             .map(|id| format!("identity:{id}"))
-            .unwrap_or_else(|| format!("profile:{id}"));
-        self.key_gate(&key)
+            .unwrap_or_else(|| format!("profile:{id}"))
     }
     fn key_gate(&self, key: &str) -> Arc<AsyncMutex<()>> {
         self.gates
@@ -305,17 +308,31 @@ impl FileManager {
             choices: Mutex::default(),
             last_emit: Mutex::new(Instant::now()),
         });
-        {
+        let (finished, tail) = watch::channel(false);
+        let mut previous = {
             let mut jobs = self.jobs.lock().unwrap();
             self.ready()?;
             jobs.insert(status.id.clone(), job.clone());
-        }
+            self.tails
+                .lock()
+                .unwrap()
+                .insert(self.queue_key(&request.profile_id), tail)
+        };
         self.update(&job, |_| {}, true);
         let manager = self.clone();
         tauri::async_runtime::spawn(async move {
+            // Register predecessor order synchronously, before workers can be scheduled out of order.
+            let predecessor_done = match previous.as_mut() {
+                Some(previous) => previous.wait_for(|done| *done).await.is_ok(),
+                None => true,
+            };
             let gate = manager.gate(&request.profile_id);
             let _guard = gate.lock().await;
-            let result = manager.run(&job, &request).await;
+            let result = if predecessor_done {
+                manager.run(&job, &request).await
+            } else {
+                Err(issue("file_cancelled"))
+            };
             manager.update(
                 &job,
                 |s| {
@@ -331,6 +348,7 @@ impl FileManager {
                 true,
             );
             manager.changed(&request.profile_id);
+            finished.send_replace(true);
         });
         Ok(status)
     }
@@ -816,6 +834,40 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         panic!("Synchronous file command did not complete");
+    }
+    #[tokio::test]
+    async fn queued_operations_use_the_result_of_the_preceding_operation() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(temp.path());
+        let source = temp.path().join("input.txt");
+        let intermediate = temp.path().join("intermediate");
+        let final_dir = temp.path().join("final");
+        std::fs::write(&source, b"ordered queue").unwrap();
+        std::fs::create_dir(&intermediate).unwrap();
+        std::fs::create_dir(&final_dir).unwrap();
+        let first = manager
+            .enqueue(request(
+                "a",
+                "copy",
+                vec![source.to_string_lossy().into()],
+                &intermediate,
+            ))
+            .unwrap();
+        let second = manager
+            .enqueue(request(
+                "a",
+                "move",
+                vec![intermediate.join("input.txt").to_string_lossy().into()],
+                &final_dir,
+            ))
+            .unwrap();
+        assert_eq!(wait(&manager, &first.id, None).await.state, "completed");
+        assert_eq!(wait(&manager, &second.id, None).await.state, "completed");
+        assert_eq!(
+            std::fs::read(final_dir.join("input.txt")).unwrap(),
+            b"ordered queue"
+        );
+        assert!(source.exists());
     }
     fn manager(root: &std::path::Path) -> Arc<FileManager> {
         let profile = |id: &str| DeviceProfile {
