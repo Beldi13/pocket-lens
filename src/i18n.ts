@@ -1,4 +1,17 @@
 const es = {
+  artworkTitle: "Imagen del dispositivo",
+  artworkHint:
+    "Intentamos obtener el fondo original al conectar. Si Android no lo permite, se mantiene el dibujo. Los cambios de imagen se guardan al instante, solo en tu computadora.",
+  artworkRefresh: "Actualizar desde el celular",
+  artworkChoose: "Elegir imagen",
+  artworkRemove: "Quitar imagen",
+  artworkSaved: "Imagen guardada.",
+  artworkRemoved:
+    "Se usará el dibujo original. Puedes volver a elegir una imagen cuando quieras.",
+  artworkUnavailable:
+    "Android no proporcionó un fondo estático. Conservamos la imagen anterior o el dibujo original.",
+  error_artwork_invalid:
+    "Elige una imagen PNG, JPEG o WebP válida de hasta 20 MB.",
   devices: "Mis dispositivos",
   settings: "Preferencias",
   help: "Guía de conexión",
@@ -200,6 +213,18 @@ const es = {
     "No se pudo completar la acción. Revisa los detalles y vuelve a intentarlo.",
 };
 const en: Record<keyof typeof es, string> = {
+  artworkTitle: "Device image",
+  artworkHint:
+    "We try to read the original wallpaper when connected. If Android does not allow it, the drawing stays. Image changes are saved immediately, only on your computer.",
+  artworkRefresh: "Refresh from phone",
+  artworkChoose: "Choose image",
+  artworkRemove: "Remove image",
+  artworkSaved: "Image saved.",
+  artworkRemoved:
+    "The original drawing will be used. You can choose another image whenever you like.",
+  artworkUnavailable:
+    "Android did not provide a static wallpaper. Your previous image or the original drawing is kept.",
+  error_artwork_invalid: "Choose a valid PNG, JPEG or WebP image up to 20 MB.",
   devices: "My devices",
   settings: "Preferences",
   help: "Connection guide",

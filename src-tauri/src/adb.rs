@@ -4,7 +4,10 @@ use std::{
     process::Stdio,
     time::Duration,
 };
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 
 #[derive(Clone)]
 pub struct Adb {
@@ -58,6 +61,65 @@ impl Adb {
         let properties = self.run(&["-s", serial, "shell", "getprop"]).await?;
         apply_properties(&mut device, &properties);
         Ok(device)
+    }
+    pub async fn wallpaper(&self, serial: &str) -> Result<String> {
+        validate_serial(serial)?;
+        let unavailable = || {
+            AppError::new(
+                "artwork_unavailable",
+                "Android did not provide a static wallpaper",
+            )
+        };
+        let remote = format!(
+            "/data/local/tmp/pocket-lens-wallpaper-{}.jar",
+            uuid::Uuid::new_v4()
+        );
+        let helper = self.directory.join("pocket-lens-wallpaper.jar");
+        let result = async {
+            self.run(&["-s", serial, "push", &helper.to_string_lossy(), &remote])
+                .await?;
+            let mut command = self.command("adb.exe");
+            command
+                .args([
+                    "-s",
+                    serial,
+                    "exec-out",
+                    "env",
+                    &format!("CLASSPATH={remote}"),
+                    "app_process",
+                    "/",
+                    "dev.beldi.pocketlens.Wallpaper",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            let mut child = command.spawn()?;
+            let stdout = child.stdout.take().ok_or_else(unavailable)?;
+            let mut bytes = Vec::new();
+            // Bound both output and running time; never treat text/errors as an image.
+            let status = tokio::time::timeout(Duration::from_secs(10), async {
+                stdout
+                    .take(4 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .await?;
+                if bytes.len() > 4 * 1024 * 1024 {
+                    return Err(unavailable());
+                }
+                child.wait().await.map_err(AppError::from)
+            })
+            .await
+            .map_err(|_| unavailable())??;
+            if !status.success() {
+                return Err(unavailable());
+            }
+            crate::artwork::normalize(&bytes).map_err(|_| unavailable())
+        }
+        .await;
+        // Remove only our unique temporary helper, including on rejection or timeout.
+        let _ = self
+            .run(&["-s", serial, "shell", "rm", "-f", &remote])
+            .await;
+        result
     }
     pub async fn discover(&self) -> Result<Discovery> {
         let mut devices = parse_devices(&self.run(&["devices", "-l"]).await?);

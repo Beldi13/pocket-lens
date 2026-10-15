@@ -110,6 +110,10 @@ pub struct DeviceProfile {
     pub endpoints: Vec<String>,
     pub mdns_names: Vec<String>,
     pub options: MirrorOptions,
+    #[serde(default)]
+    pub artwork: Option<String>,
+    #[serde(default)]
+    pub artwork_auto_attempted: bool,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -239,6 +243,8 @@ mod tests {
             endpoints: vec!["192.168.1.2:5555".into()],
             mdns_names: vec![],
             options: MirrorOptions::default(),
+            artwork: None,
+            artwork_auto_attempted: false,
         };
         let mut device = DetectedDevice {
             serial: "192.168.1.2:5555".into(),

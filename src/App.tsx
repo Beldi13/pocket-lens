@@ -24,6 +24,8 @@ import {
   X,
 } from "lucide-react";
 import { api, desktop } from "./api";
+import { version } from "../package.json";
+import { PhoneArtwork } from "./artwork";
 import {
   EditDialog,
   ErrorNotice,
@@ -104,6 +106,7 @@ export default function App() {
     void Promise.all([
       listen("devices://changed", sync),
       listen("session://changed", sync),
+      listen("profiles://changed", sync),
       listen<AppError>("engine://error", (event) => {
         if (!disposed) setError(event.payload);
       }),
@@ -264,15 +267,7 @@ export default function App() {
           </details>
         </div>
         <div className="device-art" aria-hidden="true">
-          <div className="phone-mini">
-            <div className="phone-island" />
-            <div className="phone-wallpaper">
-              <span>{profile.name.trim().slice(0, 1).toUpperCase()}</span>
-              <i />
-              <b />
-            </div>
-            <div className="phone-home" />
-          </div>
+          <PhoneArtwork name={profile.name} image={profile.artwork} />
           <span className="connection-bubble">
             {device?.transport === "usb" ? (
               <Usb size={18} />
@@ -398,7 +393,7 @@ export default function App() {
           <p>
             {t("powered")} <span>4.1</span>
           </p>
-          <small>Pocket Lens · v0.1.0</small>
+          <small>Pocket Lens · v{version}</small>
         </div>
       </aside>
       <main>
@@ -772,7 +767,11 @@ export default function App() {
       )}
       {editing && (
         <EditDialog
-          profile={editing}
+          key={editing.id}
+          profile={
+            snapshot.settings.profiles.find((p) => p.id === editing.id) ??
+            editing
+          }
           t={t}
           onClose={() => setEditing(null)}
           onSaved={() => saved(t("savedMessage"))}

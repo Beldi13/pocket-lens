@@ -32,6 +32,9 @@ export const api = {
   edit: (id: string, name: string, options: MirrorOptions) =>
     invoke<void>("edit_device", { id, name, options }),
   forget: (id: string) => invoke<void>("forget_device", { id }),
+  updateArtwork: (id: string, path: string | null = null) =>
+    invoke<boolean>("update_artwork", { id, path }),
+  removeArtwork: (id: string) => invoke<void>("remove_artwork", { id }),
   open: (id: string, confirmedSerial: string | null = null) =>
     invoke<SessionStatus>("open_device", { id, confirmedSerial }),
   close: (id: string) => invoke<void>("close_device", { id }),

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, desktop } from "./api";
+import { ArtworkEditor } from "./artwork";
 import { errorText } from "./i18n";
 import type { Translate } from "./i18n";
 import { applyPreset, asError, defaultOptions } from "./types";
@@ -732,18 +733,20 @@ export function EditDialog({
     [options, setOptions] = useState({ ...profile.options });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<AppError | null>(null);
+  const [artworkBusy, setArtworkBusy] = useState(false);
   return (
     <Modal
       wide
       title={t("configure")}
       subtitle={`${profile.model} · ${t("restartHint")}`}
       onClose={() => {
-        if (!busy) onClose();
+        if (!busy && !artworkBusy) onClose();
       }}
     >
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          if (artworkBusy) return;
           setBusy(true);
           setError(null);
           void api
@@ -764,6 +767,11 @@ export function EditDialog({
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          <ArtworkEditor
+            profile={profile}
+            t={t}
+            onBusyChange={setArtworkBusy}
+          />
           <OptionsEditor
             value={options}
             onChange={setOptions}
@@ -775,12 +783,15 @@ export function EditDialog({
           <button
             type="button"
             className="secondary"
-            disabled={busy}
+            disabled={busy || artworkBusy}
             onClick={onClose}
           >
             {t("cancel")}
           </button>
-          <button className="primary" disabled={busy || !name.trim()}>
+          <button
+            className="primary"
+            disabled={busy || artworkBusy || !name.trim()}
+          >
             {busy && <LoaderCircle className="spin" size={17} />} {t("save")}
           </button>
         </div>

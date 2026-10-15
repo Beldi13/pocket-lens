@@ -9,6 +9,7 @@ Register an Android phone, choose its preferences, and open its screen with a cl
 ## Features
 
 - Device library with per-device settings, verified identities and USB-first connection selection.
+- Local device artwork: best-effort static wallpaper import, manual PNG/JPEG/WebP selection and the original drawing when unavailable.
 - Guided USB registration, Android 11+ wireless pairing by code, manual network address, and USB-to-Wi-Fi preparation.
 - mDNS discovery, permission/offline diagnostics, explicit confirmation when identity is unavailable.
 - Quality presets and custom resolution, FPS, bitrate, codec, audio, clipboard and input control.
@@ -36,10 +37,13 @@ Windows prerequisites: Node.js 24, stable Rust (MSVC), Visual Studio C++ Build T
 ```powershell
 npm ci
 npm run vendor:prepare
+./scripts/build-wallpaper.ps1
 npm run tauri dev
 ```
 
 `vendor:prepare` downloads the official scrcpy **4.1** x64 archive and verifies its pinned SHA-256. It does not use personal scripts, require a system scrcpy installation or install phone drivers. Original binaries, server and DLLs are kept together. Build dependencies are not required on end-user computers.
+
+Building the wallpaper reader requires JDK 17+ and an Android SDK (`ANDROID_HOME`) with `platforms;android-35` and `build-tools;35.0.0`. `build-wallpaper.ps1` builds our MIT-licensed Java source into a small DEX JAR bundled with the app; no APK is installed on the phone. CI prepares these build tools. The helper runs briefly under the already authorized ADB shell, reads only the static home wallpaper and is removed afterward. It does not take screenshots, navigate the phone or change permissions. Android 7+ and firmware support are required for automatic artwork; live or inaccessible wallpapers keep the existing drawing. One automatic attempt is made per profile; **Refresh from phone** retries explicitly. A failed refresh retains an existing image. **Remove image** restores the drawing and disables automatic reimport until the user requests another image.
 
 ```powershell
 npm run verify

@@ -32,6 +32,7 @@ pub struct Engine {
     opening: Mutex<HashSet<String>>,
     discovery_gate: AsyncMutex<()>,
     launch_gate: AsyncMutex<()>,
+    artwork_gate: AsyncMutex<()>,
     shutting_down: AtomicBool,
     pub app: Option<tauri::AppHandle>,
 }
@@ -47,6 +48,7 @@ impl Engine {
             opening: Mutex::default(),
             discovery_gate: AsyncMutex::new(()),
             launch_gate: AsyncMutex::new(()),
+            artwork_gate: AsyncMutex::new(()),
             shutting_down: AtomicBool::new(false),
             app,
         })
@@ -91,6 +93,104 @@ impl Engine {
             let _ = app.emit("devices://changed", &discovery);
         }
         Ok(discovery)
+    }
+    pub async fn refresh_artwork(&self) {
+        let discovery = self.discovery.lock().unwrap().clone();
+        // One best-effort attempt per profile, only for a freshly verified identity.
+        // Failure never interrupts discovery, registration or mirroring.
+        for profile in self.settings().profiles {
+            if profile.artwork.is_none()
+                && !profile.artwork_auto_attempted
+                && let Some(device) = discovery
+                    .devices
+                    .iter()
+                    .find(|d| matches_profile(&profile, d))
+            {
+                let _artwork = self.artwork_gate.lock().await;
+                let current = self
+                    .settings()
+                    .profiles
+                    .into_iter()
+                    .find(|p| p.id == profile.id);
+                if current.is_none_or(|p| p.artwork.is_some() || p.artwork_auto_attempted) {
+                    continue;
+                }
+                let _ = self.set_artwork(&profile.id, None);
+                if device.sdk >= 24
+                    && let Ok(fresh) = self.adb.device(&device.serial).await
+                    && matches_profile(&profile, &fresh)
+                    && let Ok(image) = self.adb.wallpaper(&fresh.serial).await
+                {
+                    let _ = self.set_artwork(&profile.id, Some(image));
+                }
+            }
+        }
+    }
+    pub async fn remove_artwork(&self, id: &str) -> Result<()> {
+        let _artwork = self.artwork_gate.lock().await;
+        self.set_artwork(id, None)
+    }
+    pub fn set_artwork(&self, id: &str, artwork: Option<String>) -> Result<()> {
+        self.update(|settings| {
+            let profile = settings
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
+            profile.artwork = artwork;
+            profile.artwork_auto_attempted = true;
+            Ok(())
+        })?;
+        if let Some(app) = &self.app {
+            let _ = app.emit("profiles://changed", id);
+        }
+        Ok(())
+    }
+    pub async fn update_artwork(&self, id: &str, path: Option<String>) -> Result<bool> {
+        // Resolve before taking the image gate: resolve itself refreshes discovery.
+        let profile = self
+            .settings()
+            .profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| AppError::new("not_found", "Profile not found"))?;
+        let device = if path.is_none() {
+            Some(self.resolve(&profile, None).await?)
+        } else {
+            None
+        };
+        let _artwork = self.artwork_gate.lock().await;
+        let image = if let Some(path) = path {
+            let path = PathBuf::from(path);
+            Some(
+                tokio::task::spawn_blocking(move || crate::artwork::read_image(&path))
+                    .await
+                    .map_err(|_| AppError::new("artwork_invalid", "Could not read image"))??,
+            )
+        } else if let Some(device) = device {
+            let fresh = self.adb.device(&device.serial).await?;
+            verify_identity(&profile, &fresh, false)?;
+            if fresh.sdk < 24 {
+                None
+            } else {
+                self.adb.wallpaper(&fresh.serial).await.ok()
+            }
+        } else {
+            None
+        };
+        if let Some(image) = image {
+            self.set_artwork(id, Some(image))?;
+            Ok(true)
+        } else {
+            // An unsuccessful refresh keeps the previous image (or the original drawing).
+            self.update(|settings| {
+                if let Some(p) = settings.profiles.iter_mut().find(|p| p.id == id) {
+                    p.artwork_auto_attempted = true;
+                }
+                Ok(())
+            })?;
+            Ok(false)
+        }
     }
     pub fn snapshot(&self, autostart: bool) -> AppSnapshot {
         let settings = self.settings();
@@ -183,6 +283,8 @@ impl Engine {
                     endpoints: vec![],
                     mdns_names: vec![],
                     options: options.clone(),
+                    artwork: None,
+                    artwork_auto_attempted: false,
                 };
                 link(&mut profile, &device, &services);
                 result = Some(profile.clone());
@@ -730,6 +832,8 @@ mod tests {
             endpoints: vec![],
             mdns_names: vec![],
             options: MirrorOptions::default(),
+            artwork: None,
+            artwork_auto_attempted: false,
         }
     }
     #[test]
@@ -838,6 +942,74 @@ mod tests {
         let remaining = engine.settings().profiles;
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, second.id);
+    }
+    #[tokio::test]
+    async fn artwork_is_local_persistent_and_removal_preserves_other_profiles() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let first = profile();
+        let mut second = profile();
+        second.id = "other".into();
+        store::save(
+            &path,
+            &Settings {
+                profiles: vec![first, second],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let engine = Engine::new(Adb::new(temp.path()), path.clone(), None).unwrap();
+        let file = temp.path().join("chosen.png");
+        image::RgbImage::from_pixel(8, 8, image::Rgb([40, 100, 70]))
+            .save(&file)
+            .unwrap();
+        assert!(
+            engine
+                .update_artwork("p", Some(file.to_string_lossy().into()))
+                .await
+                .unwrap()
+        );
+        let saved = store::load(&path).unwrap();
+        assert!(
+            saved.profiles[0]
+                .artwork
+                .as_ref()
+                .unwrap()
+                .starts_with("data:image/jpeg;base64,")
+        );
+        assert!(saved.profiles[1].artwork.is_none());
+        assert!(
+            engine
+                .update_artwork(
+                    "p",
+                    Some(temp.path().join("missing").to_string_lossy().into())
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            engine.settings().profiles[0].artwork,
+            saved.profiles[0].artwork
+        );
+        engine.remove_artwork("p").await.unwrap();
+        let removed = store::load(&path).unwrap();
+        assert!(removed.profiles[0].artwork.is_none());
+        assert!(removed.profiles[0].artwork_auto_attempted);
+        assert!(!removed.profiles[1].artwork_auto_attempted);
+        let mut old = serde_json::to_value(saved).unwrap();
+        old["profiles"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("artwork");
+        old["profiles"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("artworkAutoAttempted");
+        std::fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let migrated = store::load(&path).unwrap();
+        assert!(migrated.profiles[0].artwork.is_none());
+        assert!(!migrated.profiles[0].artwork_auto_attempted);
+        assert_eq!(migrated.profiles[0].options, MirrorOptions::default());
     }
     #[tokio::test]
     async fn shutdown_prevents_new_launches_without_touching_adb() {

@@ -31,6 +31,8 @@ export interface DeviceProfile {
   endpoints: string[];
   mdnsNames: string[];
   options: MirrorOptions;
+  artwork?: string | null;
+  artworkAutoAttempted?: boolean;
 }
 export interface DetectedDevice {
   serial: string;

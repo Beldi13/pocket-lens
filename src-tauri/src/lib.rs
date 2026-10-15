@@ -1,4 +1,5 @@
 pub mod adb;
+pub mod artwork;
 pub mod engine;
 pub mod model;
 pub mod store;
@@ -66,6 +67,18 @@ fn edit_device(
 #[tauri::command]
 fn forget_device(engine: State<'_, Backend>, id: String) -> Result<()> {
     engine.forget(&id)
+}
+#[tauri::command]
+async fn update_artwork(
+    engine: State<'_, Backend>,
+    id: String,
+    path: Option<String>,
+) -> Result<bool> {
+    engine.update_artwork(&id, path).await
+}
+#[tauri::command]
+async fn remove_artwork(engine: State<'_, Backend>, id: String) -> Result<()> {
+    engine.remove_artwork(&id).await
 }
 #[tauri::command]
 async fn open_device(
@@ -148,6 +161,7 @@ pub fn run() {
                 "scrcpy.exe",
                 "scrcpy-server",
                 "bundle-manifest.json",
+                "pocket-lens-wallpaper.jar",
             ] {
                 if !vendor.join(file).exists() {
                     return Err(std::io::Error::other(format!(
@@ -172,6 +186,13 @@ pub fn run() {
                     .map_err(|e| std::io::Error::other(e.message))?;
             }
             app.manage(engine.clone());
+            let artwork_engine = engine.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    artwork_engine.refresh_artwork().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+                }
+            });
             let open =
                 MenuItem::with_id(app, "open", "Abrir / Open Pocket Lens", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Salir / Quit", true, None::<&str>)?;
@@ -226,6 +247,8 @@ pub fn run() {
             register_device,
             edit_device,
             forget_device,
+            update_artwork,
+            remove_artwork,
             open_device,
             close_device,
             save_preferences,

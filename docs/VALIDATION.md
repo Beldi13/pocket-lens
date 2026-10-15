@@ -4,6 +4,7 @@ This document records actual verification, not assumptions about hardware covera
 
 ## Automated checks
 
+- Device-artwork coverage adds drawing/image-load fallback, unavailable wallpaper retention, cancelled image selection, sanitized local image loading, removal/write-error behavior, bounded raster decoding and backwards-compatible per-profile persistence. Current feature build status is recorded by its Windows workflow; physical import remains pending until checked on a compatible connected phone.
 - Windows build `4f2a788` passed 8 frontend tests, 15 Rust tests, ESLint, TypeScript/Vite, rustfmt, Clippy and NSIS packaging in [GitHub Actions](https://github.com/Beldi13/pocket-lens/actions/runs/38774064589).
 - Frontend wizard: unauthorized device gating, selected-device save, custom preferences, expired pairing codes and secret clearing, failed manual connection, ambiguous identity confirmation.
 - Profile behavior: presets preserve recording preferences, disabling control clears incompatible power settings, same-model/IP identity separation.

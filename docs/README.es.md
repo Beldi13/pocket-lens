@@ -20,6 +20,8 @@ Guarda calidad, FPS, bitrate, códec, audio, control de teclado y mouse, portapa
 
 Preajustes: Ligero (1280 px/30 FPS/4 Mbps), Equilibrado (1920 px/60 FPS/8 Mbps), Alta calidad (resolución original/60 FPS/16 Mbps) y Mi Pova 5 (H.265/60 FPS/16 Mbps/pantalla apagada/ventana 390 × 850). Cada ajuste se puede cambiar. Los cambios se aplican al abrir de nuevo la pantalla.
 
+En **Configurar → Imagen del dispositivo** puedes actualizar el fondo desde el celular, elegir un PNG/JPEG/WebP de hasta 20 MB o quitar la imagen para volver al dibujo original. Estos cambios se guardan al instante. La app intenta obtener el fondo estático una vez al detectar el dispositivo autorizado; si Android o el fabricante no lo permiten, conserva el dibujo. Los fondos animados no se exportan. Quitar la imagen impide su reimportación automática. Las miniaturas se reducen y guardan solo en la configuración local, sin capturas de pantalla ni servicios externos. La importación automática requiere Android 7 o superior y compatibilidad del teléfono; el resto de funciones mantiene sus requisitos anteriores.
+
 ## Compatibilidad y conexión
 
 Windows 10/11 de 64 bits. Android 5 o superior; audio desde Android 11 y vinculación inalámbrica moderna desde Android 11. Algunos fabricantes requieren controladores USB u opciones adicionales de depuración. No admite iPhone.

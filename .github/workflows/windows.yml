@@ -23,6 +23,12 @@ jobs:
           cache-on-failure: true
       - run: npm ci
       - run: npm run vendor:prepare
+      - name: Build read-only Android wallpaper helper
+        shell: pwsh
+        run: |
+          & "$env:ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" "platforms;android-35" "build-tools;35.0.0"
+          if ($LASTEXITCODE -ne 0) { throw 'Android SDK setup failed' }
+          ./scripts/build-wallpaper.ps1
       - run: npm run verify
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib

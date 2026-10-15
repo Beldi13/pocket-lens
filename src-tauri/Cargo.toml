@@ -1,6 +1,6 @@
 [package]
 name = "pocket-lens"
-version = "0.1.0"
+version = "0.2.0"
 description = "Your Android devices, one simple desktop"
 authors = ["Diego Joel Robles Muñoz"]
 edition = "2024"
@@ -35,6 +35,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = "0.4"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
