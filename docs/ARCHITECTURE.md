@@ -25,3 +25,13 @@ Closing the main window hides it. Tray Quit / Exit closes owned sessions, then e
 Versioned settings are saved by temp-file replacement after validation; unknown versions and unreadable settings are not overwritten. Pairing secrets are never serialized. The whole official Windows scrcpy directory is shipped as Tauri resources so its DLL/server layout remains intact. Development uses the local ignored vendor directory; release resolves the installed resource directory. SHA-256 is pinned; dependency versions are locked.
 
 No private Homebase Lens modules, profiles or credentials are imported. Native code and artwork in this repository are independent.
+
+## Files, screen input and signed updates (0.3.0)
+
+`FileEntry`, `FileJob` and `UpdateStatus` are serialized Rust contracts mirrored in TypeScript. `AppPreferences.fileDirectories` has a default for existing settings. Commands and events are centralized in `api.ts`; file jobs and updater status are reconciled after missed events.
+
+The original Android `Files.java` helper receives bounded JSON over stdin, with length-delimited binary streams. No user filename enters a shell command. Its path validator allows only shared storage, rejects traversal and symlinks, and never mutates the root. Local operations reject junctions, device paths, alternate streams and reserved Windows names. Transfers use per-profile/verified-identity queues, unique staged files, size/hash validation, then atomic rename. Moves re-inventory and rehash the whole selection before deleting sources. Cancellation is disabled during the final verified removal phase. A disconnect can leave an own temporary file when cleanup cannot reach the phone.
+
+Screen actions serialize SendInput, hold the managed child against PID reuse, locate its single visible owned window, reject held modifiers, verify foreground ownership and restore prior focus only if the user has not changed it. They never change persisted startup power preferences.
+
+The updater uses the official Tauri plugin, HTTPS stable-only GitHub endpoint, embedded public key, signed-version enforcement and explicit download/install. Install blocks new file/session work and requires graceful recording closure. Production builds contain no test endpoint or acceptance hook. The diagnostics-only `dev.beldi.pocketlens.updatecheck` fixture runs a real signed 0.3.0 → 0.3.1 NSIS upgrade with a throwaway key and separate installer registration/configuration.

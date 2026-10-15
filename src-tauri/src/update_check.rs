@@ -34,7 +34,7 @@ pub fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error
             artwork: Some("fixture-image.png".into()),
             artwork_auto_attempted: true,
         });
-        store::save(&settings_path, &settings)?;
+        store::save(&settings_path, &settings).map_err(|e| std::io::Error::other(e.message))?;
         std::fs::write(config.join("fixture-image.png"), b"preserved fixture image")?;
         std::fs::copy(&settings_path, output.join("before.json"))?;
     }
@@ -45,7 +45,11 @@ pub fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error
                 let before = std::fs::read(output.join("before.json"))?;
                 let after = std::fs::read(&settings_path)?;
                 if before != after
-                    || store::load(&settings_path)?.profiles[0].name != "Teléfono Ñ 日本"
+                    || store::load(&settings_path)
+                        .map_err(|e| std::io::Error::other(e.message))?
+                        .profiles[0]
+                        .name
+                        != "Teléfono Ñ 日本"
                     || std::fs::read(config.join("fixture-image.png"))?
                         != b"preserved fixture image"
                 {

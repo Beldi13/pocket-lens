@@ -22,6 +22,16 @@ Preajustes: Ligero (1280 px/30 FPS/4 Mbps), Equilibrado (1920 px/60 FPS/8 Mbps),
 
 En **Configurar → Imagen del dispositivo** puedes actualizar el fondo desde el celular, elegir un PNG/JPEG/WebP de hasta 20 MB o quitar la imagen para volver al dibujo original. Estos cambios se guardan al instante. La app intenta obtener el fondo estático una vez al detectar el dispositivo autorizado; si Android o el fabricante no lo permiten, conserva el dibujo. Los fondos animados no se exportan. Quitar la imagen impide su reimportación automática. Las miniaturas se reducen y guardan solo en la configuración local, sin capturas de pantalla ni servicios externos. La importación automática requiere Android 7 o superior y compatibilidad del teléfono; el resto de funciones mantiene sus requisitos anteriores.
 
+## Pantalla, archivos y actualizaciones (0.3.0)
+
+Durante una sesión con control habilitado puedes **Encender pantalla** o **Apagar pantalla** sin cerrarla ni cambiar el ajuste inicial guardado. Los atajos son Alt izquierdo + Mayús + O y Alt izquierdo + O. No se muestra un estado físico supuesto: son acciones explícitas.
+
+Pulsa **Archivos** en la tarjeta para abrir **Esta PC** y **Celular** lado a lado. Puedes navegar, filtrar, ordenar, seleccionar varios elementos, crear carpetas, renombrar, copiar, mover y eliminar. Arrastrar entre paneles o desde el Explorador al celular copia; mover requiere confirmación. Los APK se copian sin instalar. Solo se accede al almacenamiento compartido disponible para ADB. No se siguen enlaces ni uniones.
+
+Los archivos se escriben en temporales y se verifican por tamaño y SHA-256. Los conflictos proponen **Conservar ambos**. Si un movimiento omite parte de la selección, se conservan todos los originales. En Windows el borrado usa la Papelera; un fallo no se convierte en borrado definitivo. En Android se confirma el borrado permanente. Las operaciones interrumpidas no se reanudan automáticamente; si el teléfono se desconecta, retirar temporales puede quedar pendiente. El arrastre hacia aplicaciones externas desde Android queda fuera de esta versión.
+
+En **Preferencias → Buscar actualizaciones** se consultan únicamente versiones estables. También se comprueba al abrir, sin bloquear el uso. La app avisa y ofrece descargar; después debes confirmar **Instalar y reiniciar**. Se verifican firma y versión, se cierran las sesiones y se finalizan las grabaciones antes de instalar. Los perfiles, imágenes, preferencias y autoinicio se conservan. Desde 0.2.0 debes instalar 0.3.0 manualmente una vez.
+
 ## Compatibilidad y conexión
 
 Windows 10/11 de 64 bits. Android 5 o superior; audio desde Android 11 y vinculación inalámbrica moderna desde Android 11. Algunos fabricantes requieren controladores USB u opciones adicionales de depuración. No admite iPhone.

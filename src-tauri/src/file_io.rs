@@ -117,6 +117,23 @@ fn is_link(meta: &std::fs::Metadata) -> bool {
 }
 pub fn local_path(path: &str, mutation: bool) -> Result<PathBuf> {
     let path = PathBuf::from(path);
+    #[cfg(windows)]
+    for part in path.components() {
+        match part {
+            std::path::Component::Prefix(prefix)
+                if !matches!(
+                    prefix.kind(),
+                    std::path::Prefix::Disk(_) | std::path::Prefix::UNC(_, _)
+                ) =>
+            {
+                return Err(issue("file_path"));
+            }
+            std::path::Component::Normal(name) => {
+                valid_name(name.to_str().ok_or_else(|| issue("file_name"))?, true)?
+            }
+            _ => {}
+        }
+    }
     if !path.is_absolute()
         || path.components().any(|p| {
             matches!(
