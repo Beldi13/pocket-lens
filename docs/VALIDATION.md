@@ -4,6 +4,7 @@ This document records actual verification, not assumptions about hardware covera
 
 ## Automated checks
 
+- Windows build `4f2a788` passed 8 frontend tests, 15 Rust tests, ESLint, TypeScript/Vite, rustfmt, Clippy and NSIS packaging in [GitHub Actions](https://github.com/Beldi13/pocket-lens/actions/runs/38774064589).
 - Frontend wizard: unauthorized device gating, selected-device save, custom preferences, expired pairing codes and secret clearing, failed manual connection, ambiguous identity confirmation.
 - Profile behavior: presets preserve recording preferences, disabling control clears incompatible power settings, same-model/IP identity separation.
 - Rust: settings replacement and unknown version preservation; endpoint validation; ADB permission/offline parsing; pairing vs connection ports; stable identity parsing; explicit target and literal arguments; recording uniqueness and invalid directories; codec error classification.
@@ -13,15 +14,21 @@ This document records actual verification, not assumptions about hardware covera
 
 | Check                                                     | Status                                                     |
 | --------------------------------------------------------- | ---------------------------------------------------------- |
-| Pova 5 Wi-Fi detection                                    | ADB detects an authorized device on the development laptop |
-| Register / reopen / persist through app                   | Pending installed-build verification                       |
-| Screen off while mirroring                                | Pending installed-build verification                       |
-| MP4 graceful finalization and decoding                    | Pending installed-build verification                       |
+| Pova 5 Wi-Fi detection                                    | Passed with an authorized Android 14 device; legacy and modern Wi-Fi endpoints resolve to one profile |
+| Register / reopen / persist through app                   | Registration passed in installed app; native diagnostic passed session open, duplicate prevention, close and reopen |
+| Screen off while mirroring                                | Passed on Pova 5; Android display state confirmed OFF during mirroring |
+| MP4 graceful finalization and decoding                    | Passed native-session recording and full FFmpeg decode; separate capture included an Opus audio track |
 | Mouse/keyboard interaction and audible playback           | Pending physical verification                              |
 | Modern pairing with a fresh phone code                    | Pending phone-side interaction                             |
 | USB registration and USB-to-Wi-Fi setup                   | Pending USB-connected device                               |
 | Two phones at once; close one without affecting the other | Pending second physical Android device                     |
 | Sign-in selector after Windows restart                    | Pending actual Windows sign-in                             |
-| Profile retained on installer upgrade                     | Pending installer verification                             |
+| Profile retained on installer upgrade                     | Passed reinstall of newer build at version 0.1.0; Pova 5 name, identity and preferences retained. Cross-version upgrade remains pending |
+| Library action visible when opening the installed app    | Passed compact layout at initial window size without scrolling |
+| Disconnected device / failed reconnect                    | Passed installed app: bounded failure and actionable Spanish notice; no scrcpy child launched |
+
+The final installer was verified against its CI SHA-256 before silent per-user installation. The desktop and Start menu shortcuts and Windows autostart registry entry were verified. An actual Windows sign-in was not performed. Phone mirroring was validated earlier through the native engine diagnostic; during final visual verification the phone was unavailable, so launching a live session from the installed library remains pending. Mouse/keyboard interaction and audible playback are not inferred from enabled options or the presence of an audio track.
+
+Final installed artifact SHA-256: `33a3f63658685ec9f77cd0e7f577995ed8b5168892ed38de4740f31161f94f67`.
 
 Opt-in diagnostic binary (not included as a user-facing app) exercises a real device only when explicitly supplied a serial and output directory. It creates local recordings and isolated settings; do not upload its output or personal logs to the repository.
