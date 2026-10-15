@@ -10,10 +10,10 @@ async fn main() {
 }
 async fn check() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 4 {
+    if args.len() != 4 && !(args.len() == 5 && args[4] == "--artwork-only") {
         return Err(AppError::new(
             "usage",
-            "pocket-lens-check <scrcpy-directory> <device-serial> <output-directory>",
+            "pocket-lens-check <scrcpy-directory> <device-serial> <output-directory> [--artwork-only]",
         ));
     }
     let directory = PathBuf::from(&args[1]);
@@ -43,6 +43,27 @@ async fn check() -> Result<()> {
             None,
         )
         .await?;
+    if args.get(4).is_some_and(|arg| arg == "--artwork-only") {
+        engine.refresh().await?;
+        engine.refresh_artwork().await;
+        let saved = engine
+            .settings()
+            .profiles
+            .into_iter()
+            .find(|p| p.id == profile.id)
+            .unwrap();
+        let available = saved.artwork.is_some();
+        assert!(saved.artwork_auto_attempted);
+        let restored = Engine::new(Adb::new(&directory), output.join("settings.json"), None)?;
+        assert_eq!(restored.settings().profiles[0].artwork, saved.artwork);
+        engine.remove_artwork(&profile.id).await?;
+        engine.refresh_artwork().await;
+        assert!(engine.settings().profiles[0].artwork.is_none());
+        println!(
+            "Artwork check passed: automatic attempt, local persistence, removal and no automatic reimport. Original wallpaper available: {available}. No mirroring session opened."
+        );
+        return Ok(());
+    }
     let session = engine.open(profile.id.clone(), None).await?;
     assert_eq!(
         engine
