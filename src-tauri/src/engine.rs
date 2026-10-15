@@ -3,7 +3,10 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     process::Stdio,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tauri::Emitter;
@@ -29,6 +32,7 @@ pub struct Engine {
     opening: Mutex<HashSet<String>>,
     discovery_gate: AsyncMutex<()>,
     launch_gate: AsyncMutex<()>,
+    shutting_down: AtomicBool,
     pub app: Option<tauri::AppHandle>,
 }
 impl Engine {
@@ -43,6 +47,7 @@ impl Engine {
             opening: Mutex::default(),
             discovery_gate: AsyncMutex::new(()),
             launch_gate: AsyncMutex::new(()),
+            shutting_down: AtomicBool::new(false),
             app,
         })
     }
@@ -226,6 +231,9 @@ impl Engine {
         id: String,
         confirmed_serial: Option<String>,
     ) -> Result<SessionStatus> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(AppError::new("app_closing", "Pocket Lens is closing"));
+        }
         {
             let mut opening = self.opening.lock().unwrap();
             if opening.contains(&id)
@@ -321,6 +329,9 @@ impl Engine {
             ));
         }
         let _launch = self.launch_gate.lock().await;
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(AppError::new("app_closing", "Pocket Lens is closing"));
+        }
         {
             let sessions = self.sessions.lock().unwrap();
             if sessions.values().any(|s| {
@@ -472,6 +483,8 @@ impl Engine {
         Ok(())
     }
     pub async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        let _launch = self.launch_gate.lock().await;
         let ids: Vec<_> = self.sessions.lock().unwrap().keys().cloned().collect();
         for id in ids {
             let _ = self.stop(&id).await;
@@ -827,5 +840,26 @@ mod tests {
         let remaining = engine.settings().profiles;
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, second.id);
+    }
+    #[tokio::test]
+    async fn shutdown_prevents_new_launches_without_touching_adb() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = Arc::new(
+            Engine::new(
+                Adb::new(temp.path()),
+                temp.path().join("settings.json"),
+                None,
+            )
+            .unwrap(),
+        );
+        engine.shutdown().await;
+        assert_eq!(
+            engine
+                .open("any-profile".into(), None)
+                .await
+                .unwrap_err()
+                .code,
+            "app_closing"
+        );
     }
 }
